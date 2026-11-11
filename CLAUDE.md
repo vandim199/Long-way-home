@@ -10,9 +10,10 @@ Single-screen worker-placement roguelike, as a web prototype. **Read `GDD.md` fi
 ## Layout
 
 - `src/logic.js`: all rules and state, with **no DOM**. Tunable numbers sit at the top in `CFG`, `TYPES`, `THREATS`, `MODS` and `UPGRADES`. Functions the sim needs are exported at the bottom.
-- `src/ui.js`: rendering and input (event delegation on `data-act`).
-- `src/template.html`: markup and CSS. Design tokens live in `:root`.
-- `tools/build.js`, `tools/sim.js`.
+- `src/ui.js`: rendering, input (event delegation on `data-act`), sound, and the end-of-turn replay. `endTurn()` returns `report.events`, an ordered list (`act`, `step`, `pile`, `tgrow`, `clear`, `meal`, `recall`, `bounty`, `overrun`). The UI swaps `S` for a copy of the pre-turn state, steps it forward one event at a time with a popup, a flying icon and a rising-pitch sound, then restores the real state.
+- `src/template.html`: markup and CSS. Design tokens live in `:root`. `--px` is the whole-number sprite scale (2 on phones, 3 from 640px).
+- `assets/`: Kenney CC0 tile sheets (`img/`) and sounds (`sfx/`); see `assets/CREDITS.md` for sources and how sprite codes like `F66` map to tiles.
+- `tools/build.js`: inlines `src/` and every `{{asset:...}}` reference (as base64) into `index.html`. `tools/sim.js`: the headless bot.
 - `index.html`: **generated**. Never edit it by hand. It's committed so the game opens without a build step.
 
 ## Working rules

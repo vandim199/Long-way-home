@@ -1,7 +1,7 @@
 # Long Way Home — Game Design Document
 
 *Working title.* Single-screen worker-placement roguelike.
-**Status:** playable web prototype v0.1 (Nov 2026). One season playtested by the designer: "looks solid, could be improved."
+**Status:** playable web prototype v0.2 (Nov 2026). One season playtested by the designer: "looks solid, could be improved."
 
 This document is the source of truth for the design. The numbers live in `src/logic.js` (`CFG` and the tables at the top). If this doc and the code disagree, decide which one is right and fix the other.
 
@@ -140,9 +140,12 @@ Send villagers out from your home to fields, wells, forests and workshops. They 
 ## 13. Tech
 
 - Vanilla JS, no dependencies, one self-contained page. Mobile-first (designed at about 390px wide).
-- `src/logic.js` holds the rules and state and has no DOM. `src/ui.js` handles rendering and input. `tools/build.js` inlines both into `index.html`.
+- `src/logic.js` holds the rules and state and has no DOM. `src/ui.js` handles rendering and input. `tools/build.js` inlines both into `index.html`, along with the art and sound as base64.
+- **Look and feel:** pixel-art harvest farm built from Kenney's CC0 Tiny Farm, Tiny Town and Tiny Dungeon sheets, scaled by whole numbers so pixels stay crisp. Parchment panels, wooden buttons, a wheat-field backdrop, Jersey 15 pixel font. Emoji only for small icons (modifiers, fire, footsteps).
+- **End-of-turn replay:** `endTurn()` emits an ordered event list. The UI plays it back one beat at a time so the player can follow it: each villager walks out and pops their payout ("+3 🪵"), the icon flies into the store, then each walking villager's timer ticks down (or they walk home), piles grow, the threat grows, then the meal. Every beat plays a Kenney sound pitched one step higher on a major pentatonic scale, so a big turn builds up. Tapping during the replay speeds it up. A mute toggle sits in the top bar.
 - If the loop proves fun, consider porting to Unity. Keeping the rules DOM-free makes that port mostly a translation job.
 
 ## Changelog
 
+- **v0.2 (2026-11-11):** visual and audio pass, no rule changes. Pixel-art farm theme with Kenney assets, sequenced end-of-turn replay with popups, flying icons and rising-pitch sounds, mute toggle. `endTurn()` now returns `report.events`.
 - **v0.1 (2026-11-11):** first playable. Core loop, 6 space types, 2 threats, food, market with 11 offers, stackable modifiers, headless bot sim.

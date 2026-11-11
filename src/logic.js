@@ -189,25 +189,20 @@ function unassign(wid) {
 }
 
 // ----- resolution -----
-function meal(log, label) {
+// report.events is an ordered list of what happened, for the UI to replay one step at a time.
+function meal(report, label) {
   const need = totalAppetite();
   const eat = Math.min(need, S.res.bread);
   S.res.bread -= eat;
   const short = need - eat;
   S.hearts -= short;
-  log.push(short ? `${label}: ate ${eat}🍞, ${short} short. −${short}❤.` : `${label}: everyone ate (${eat}🍞).`);
-}
-
-function fmtGain(p) {
-  const parts = [];
-  if (p.dmg) parts.push('−' + p.dmg + (S.threat ? THREATS[S.threat.type].icon : ''));
-  for (const r in p.gain) parts.push('+' + p.gain[r] + ICON[r]);
-  return parts.join(' ');
+  report.events.push({ k: 'meal', need, eat, short, hearts: S.hearts });
+  report.log.push(short ? `${label}: ate ${eat}🍞, ${short} short. −${short}❤.` : `${label}: everyone ate (${eat}🍞).`);
 }
 
 function endTurn() {
   if (S.phase !== 'play') return null;
-  const report = { fx: [], log: [] };
+  const report = { log: [], events: [] };
   let fought = false;
   const before = S.threat.hp;
   const got = {};
@@ -221,7 +216,7 @@ function endTurn() {
       t.lockedBy = w.id;
     }
     w.away = p.travel; w.at = p.tid; w.fresh = true;
-    report.fx.push({ tid: p.tid, text: fmtGain(p) });
+    report.events.push({ k: 'act', wid: w.id, tid: p.tid, gain: { ...p.gain }, cost: { ...p.cost }, dmg: p.dmg || 0, travel: p.travel, hp: S.threat.hp });
   }
   const gotTxt = Object.keys(got).map(r => `+${got[r]}${ICON[r]}`).join(' ');
   if (gotTxt) report.log.push('Collected ' + gotTxt + '.');
@@ -231,28 +226,38 @@ function endTurn() {
   for (const w of S.workers) {
     if (w.away > 0 && !w.fresh) {
       w.away--;
+      const from = w.at;
       if (w.away === 0) {
         const sp = w.at === 'T' ? null : target(w.at);
         if (sp && sp.lockedBy === w.id) sp.lockedBy = null;
         w.at = null;
       }
+      report.events.push({ k: 'step', wid: w.id, tid: from, away: w.away });
     }
     w.fresh = false;
   }
   // accumulation
-  for (const sp of S.spaces) if (!sp.lockedBy && TYPES[sp.type].kind === 'gather') sp.pile += growth(sp);
+  for (const sp of S.spaces) if (!sp.lockedBy && TYPES[sp.type].kind === 'gather') {
+    sp.pile += growth(sp);
+    report.events.push({ k: 'pile', tid: sp.id, n: growth(sp), pile: sp.pile });
+  }
 
   const T = THREATS[S.threat.type];
   if (fought) report.log.push(`${T.name} ${before} → ${S.threat.hp}.`);
   S.stats.turns++;
   S.log = report.log;
   if (S.threat.hp <= 0) { finishSeason(report); return report; }
-  if (!fought) { S.threat.hp += S.threat.growth; report.log.push(`${T.name} grew to ${S.threat.hp}.`); }
+  if (!fought) {
+    S.threat.hp += S.threat.growth;
+    report.events.push({ k: 'tgrow', n: S.threat.growth, hp: S.threat.hp });
+    report.log.push(`${T.name} grew to ${S.threat.hp}.`);
+  }
 
-  if (S.turn === CFG.mealTurn) meal(report.log, 'Meal');
+  if (S.turn === CFG.mealTurn) meal(report, 'Meal');
   if (S.hearts <= 0) { lose('Your village went hungry.'); return report; }
   if (S.turn >= CFG.turns) {
     lose(S.threat.type === 'fire' ? 'The fire burned through the village.' : 'The monsters overran the village.');
+    report.events.push({ k: 'overrun' });
     return report;
   }
   S.turn++;
@@ -269,12 +274,15 @@ function recallAll() {
 
 function finishSeason(report) {
   const T = THREATS[S.threat.type];
-  meal(report.log, 'Season-end meal');
+  report.events.push({ k: 'clear', type: S.threat.type });
+  meal(report, 'Season-end meal');
   recallAll();
+  report.events.push({ k: 'recall' });
   if (S.hearts <= 0) { lose('Your village went hungry.'); return; }
   const unused = CFG.turns - S.turn;
   const b = CFG.bounty(S.season, unused);
   S.res.coins += b;
+  report.events.push({ k: 'bounty', n: b });
   report.log.unshift(`${T.name} ${T.done} on turn ${S.turn}. Bounty +${b}🪙.`);
   S.log = report.log;
   if (S.season >= CFG.seasons) { S.phase = 'won'; S.over = { win: true, why: `You survived all ${CFG.seasons} seasons.` }; return; }
