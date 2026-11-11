@@ -173,20 +173,38 @@ function renderTop() {
   $('#muteBtn').textContent = sound.muted ? '🔈' : '🔊';
 }
 
-function renderHud() {
-  const t = S.threat, T = THREATS[t.type];
-  const dmg = plannedDmg();
+function threatHead(t, title) {
+  const T = THREATS[t.type];
+  const dmg = plannedDmg(t.id);
   const after = Math.max(0, t.hp - dmg);
-  const left = CFG.turns - S.turn;
   const pct = Math.min(100, Math.round((t.hp / Math.max(t.max, t.hp)) * 100));
   const afterPct = Math.min(100, Math.round((after / Math.max(t.max, t.hp)) * 100));
-  $('#threat').className = 'card panel threat ' + t.type;
-  $('#threat').innerHTML = `
-    <div class="card-head"><span class="big-ico">${threatIco(t.type, t.type === 'fire' ? 1.3 : 2)}</span><span class="card-title">${T.name}</span>
+  return `<div class="card-head"><span class="big-ico">${threatIco(t.type, t.type === 'fire' ? 1.3 : 2)}</span><span class="card-title">${title}</span>
       <span class="hp" id="threatHp">${dmg ? `<s>${t.hp}</s> ${after}` : t.hp}</span></div>
-    <div class="bar"><i style="width:${pct}%"></i><b style="width:${afterPct}%"></b></div>
-    <div class="card-line">Fight with ${ico(T.res)}${T.per > 1 ? ` (${T.per} dmg each)` : ''} · grows +${t.growth} if ignored</div>
-    <div class="card-line strong">${left === 0 ? 'Last turn to stop it!' : `${left + 1} turns left to stop it`}</div>`;
+    <div class="bar"><i style="width:${pct}%"></i><b style="width:${afterPct}%"></b></div>`;
+}
+
+function renderHud() {
+  const t = S.threat, T = THREATS[t.type];
+  const left = CFG.turns - S.turn;
+  const card = $('#threat');
+  if (!t.cleared) {
+    card.className = 'card panel threat ' + t.type;
+    card.innerHTML = threatHead(t, T.name) + `
+      <div class="card-line">Fight with ${ico(T.res)}${T.per > 1 ? ` (${T.per} dmg each)` : ''} · grows +${t.growth} if ignored</div>
+      <div class="card-line strong">${left === 0 ? 'Last turn to stop it!' : `${left + 1} turns left to stop it`}</div>`;
+  } else if (S.bonus && !S.bonus.cleared) {
+    const B = S.bonus, BT = THREATS[B.type];
+    card.className = 'card panel threat bonus ' + B.type;
+    card.innerHTML = threatHead(B, `<span class="star">★</span> Bonus ${BT.name.toLowerCase()}`) + `
+      <div class="card-line">Optional · fight with ${ico(BT.res)}${BT.per > 1 ? ` (${BT.per} dmg each)` : ''} · never grows · +${CFG.bonusBounty(S.season)}${ico('coins')}</div>
+      <div class="card-line strong">${T.name} ${T.done} ✓ · ${left === 0 ? 'last turn' : `${left + 1} turns left`}</div>`;
+  } else {
+    card.className = 'card panel threat calm';
+    card.innerHTML = `<div class="card-head"><span class="big-ico">${sp('F83', 2)}</span><span class="card-title">All quiet</span><span class="hp">✓</span></div>
+      <div class="card-line">${T.name} ${T.done}${S.bonus ? `, bonus ${THREATS[S.bonus.type].name.toLowerCase()} too` : ''}. Farm freely and stock up.</div>
+      <div class="card-line strong">${left === 0 ? 'Season ends after this turn' : `Season ends after turn ${CFG.turns} · ${left + 1} turns left`}</div>`;
+  }
 
   const need = totalAppetite();
   const have = S.res.bread, inc = incoming('bread'), out = S.plans.reduce((a, p) => a + (p.cost.bread || 0), 0);
@@ -208,9 +226,9 @@ function renderRes() {
   }).join('');
 }
 
-function gainHTML(p) {
+function gainHTML(p, type = S.threat.type) {
   const parts = [];
-  if (p.dmg) parts.push(`−${p.dmg}${threatIco(S.threat.type)}`);
+  if (p.dmg) parts.push(`−${p.dmg}${threatIco(type)}`);
   for (const r in p.gain) parts.push(`+${p.gain[r]}${ico(r)}`);
   return parts.join(' ');
 }
@@ -223,9 +241,18 @@ function tileHTML(x, y) {
       <span class="home-who">${home.map(w => `<span style="--wc:${w.color}">${vsp(w, 1, '', planOf(w.id) ? 'ghost' : '')}</span>`).join('')}</span></div>`;
   }
   const spc = S.spaces.find(s => s.x === x && s.y === y);
-  const isT = S.threat && S.threat.x === x && S.threat.y === y;
+  const th = [S.threat, S.bonus].find(t => t && t.x === x && t.y === y);
+  const isT = !!th;
   if (!spc && !isT) return `<div class="tile empty" aria-hidden="true">${art([...grass(h), ...DECO[h % DECO.length]])}</div>`;
-  const t = isT ? S.threat : spc;
+  const t = isT ? th : spc;
+  const comingBack = isT ? S.workers.filter(w => w.at === t.id && w.away > 0) : [];
+  const backHTML = () => comingBack.length ? `<span class="who">${comingBack.map(w => `<span style="--wc:${w.color}">${vsp(w, 1)}</span>`).join('')}</span>` : '';
+  // a stopped threat leaves a quiet cell behind (villagers may still be walking back from it)
+  if (isT && t.cleared) {
+    const T = THREATS[t.type];
+    const scene = t.type === 'fire' ? [['T24', 0, 0], ['T25', 1, 0], ['T26', 0, 1], ['T25', 1, 1], ...cottage('red')] : [...grass(h), ['F77', 0.2, 0.9], ['T29', 1, 0.2]];
+    return `<div class="tile foe cleared ${t.type}" aria-label="${esc(`${t.bonus ? 'Bonus ' : ''}${T.name} ${T.done}`)}">${art(scene)}<span class="pill done">✓</span>${backHTML()}</div>`;
+  }
   const sel = S.selected && W(S.selected);
   const plans = S.plans.filter(p => p.tid === t.id);
   const targetable = S.phase === 'target' && validTarget(S.pending.id, t);
@@ -233,17 +260,17 @@ function tileHTML(x, y) {
   const travel = travelOf(t, sel || null);
   if (isT) {
     const T = THREATS[t.type];
-    label = `${T.name}, strength ${t.hp}`;
-    cls += ' foe ' + t.type;
+    label = `${t.bonus ? 'Optional bonus: ' : ''}${T.name}, strength ${t.hp}`;
+    cls += ' foe ' + t.type + (t.bonus ? ' bonus' : '');
     if (t.type === 'fire') {
       body = art([['T24', 0, 0], ['T25', 1, 0], ['T26', 0, 1], ['T25', 1, 1], ...cottage('red')]) +
         `<span class="flame" style="left:8%;top:22%">🔥</span><span class="flame" style="left:48%;top:8%;animation-delay:.25s">🔥</span><span class="flame" style="left:30%;top:46%;animation-delay:.1s">🔥</span>`;
     } else {
-      body = art([...grass(h), ['D120', 0.55, 0.05], ['D110', 0, 0.75], ['D112', 1, 0.75]]);
+      // only creatures here, no people, so it never reads as a villager standing on the tile
+      body = art([...grass(h), ['T29', 0.9, 0.05], ['D120', 0.1, 0], ['D110', 0, 0.85], ['D122', 1, 0.8]]);
     }
-    body += `<span class="pill">${threatIco(t.type)}<span>${t.hp}</span></span><span class="trav">👣${travel}</span>`;
-    const comingBack = S.workers.filter(w => w.at === 'T' && w.away > 0);
-    if (comingBack.length && !plans.length) body += `<span class="who">${comingBack.map(w => `<span style="--wc:${w.color}">${vsp(w, 1)}</span>`).join('')}</span>`;
+    body += `<span class="pill">${t.bonus ? '<span class="star">★</span>' : ''}${threatIco(t.type)}<span>${t.hp}</span></span><span class="trav">👣${travel}</span>`;
+    if (!plans.length) body += backHTML();
   } else {
     const ty = TYPES[spc.type];
     label = ty.name;
@@ -265,9 +292,9 @@ function tileHTML(x, y) {
   if (plans.length) {
     cls += ' planned';
     body += `<span class="who">${plans.map(p => { const w = W(p.wid); return `<span style="--wc:${w.color}">${vsp(w)}</span>`; }).join('')}</span>`;
-    if (isT) body += `<span class="pill dmgpv">${gainHTML({ dmg: plans.reduce((a, p) => a + p.dmg, 0), gain: {} })}</span>`;
+    if (isT) body += `<span class="pill dmgpv">${gainHTML({ dmg: plans.reduce((a, p) => a + p.dmg, 0), gain: {} }, t.type)}</span>`;
   }
-  const canGo = S.phase === 'play' && !anim && sel && isFree(sel) && (isT || (!spc.lockedBy && !plans.length));
+  const canGo = S.phase === 'play' && !anim && sel && isFree(sel) && (isT ? t.hp - plannedDmg(t.id) > 0 : !spc.lockedBy && !plans.length);
   if (canGo) cls += ' avail';
   if (targetable) cls += ' targetable';
   return `<button class="${cls}" data-act="tile" data-id="${t.id}" aria-label="${esc(label)}">${body}</button>`;
@@ -357,8 +384,9 @@ function renderOverlay() {
         <li><b>Piles grow.</b> A gathering space grows +1 every turn nobody is using it. Far spaces start bigger.</li>
         <li><b>Converting needs stock.</b> The Bakery (red cottage) and Fletcher (archery range) only use what's already in your store, not what's arriving this turn.</li>
         <li><b>Meals.</b> After turn ${CFG.mealTurn} and at season end, each villager eats ${ico('bread')}. Each missing bread costs a heart. At 0 hearts the run ends.</li>
-        <li><b>The threat.</b> Fight it by sending villagers with ${ico('water')} (fire) or ${ico('arrows')} (monsters, 2 damage each). Each carries ${CFG.carry}. Any number can go at once. It grows on turns you don't fight it. Stop it by turn ${CFG.turns} or the run ends.</li>
-        <li><b>Market.</b> Stopping it early pays more ${ico('coins')}. Spend coins between seasons on villagers, modifiers and space upgrades.</li>
+        <li><b>The threat.</b> Fight it by sending villagers with ${ico('water')} (fire) or ${ico('arrows')} (monsters, 2 damage each). Each carries ${CFG.carry}. Any number can go at once. It grows on turns you don't fight it. Stop it by turn ${CFG.turns} or the run ends. The season always lasts ${CFG.turns} turns, so stopping it early leaves free turns to farm.</li>
+        <li><b>Bonus threat.</b> Once the season's threat is stopped, a <span class="star">★</span> bonus threat of the other kind appears. It's optional: it never grows and ignoring it costs nothing, but stopping it pays extra ${ico('coins')}.</li>
+        <li><b>Market.</b> After turn ${CFG.turns}. Stopping the threat early pays a bigger bounty. Spend coins between seasons on villagers, modifiers and space upgrades.</li>
       </ul>
       <p class="credits">Art and sound: Kenney (kenney.nl), CC0.</p>
       <div class="sheet-actions"><button class="go" data-act="closehelp">Got it</button></div></div>`;
@@ -369,7 +397,7 @@ function renderOverlay() {
 }
 
 // ---------- turn replay ----------
-const STEP = { act: 430, step: 330, home: 380, pile: 170, tgrow: 520, clear: 950, meal: 750, recall: 600, bounty: 800, overrun: 700 };
+const STEP = { spawn: 900, act: 430, step: 330, home: 380, pile: 170, tgrow: 520, clear: 950, meal: 750, recall: 600, bounty: 800, overrun: 700 };
 const pace = n => Math.max(0.55, 1 - n * 0.035);
 
 async function playTurn() {
@@ -398,7 +426,7 @@ async function playEvent(ev) {
     renderRes(); renderHud(); renderBoard();
     await fly(homeCell(), cellOf(t), vsp(w), 300);
     w.away = ev.travel; w.at = ev.tid;
-    if (t.isThreat) S.threat.hp = ev.hp;
+    if (t.isThreat) t.hp = ev.hp;
     else { if (TYPES[t.type].kind === 'gather') t.pile = 0; t.lockedBy = w.id; }
     renderBoard(); renderHud(); renderCrew();
     const cell = cellOf(t);
@@ -408,7 +436,7 @@ async function playEvent(ev) {
     if (ev.dmg) {
       riser('hit', -2, 0.9);
       bump(cell, 'hit');
-      pop(cell, `−${ev.dmg}${threatIco(S.threat.type, 2)}`, 'dmg', size);
+      pop(cell, `−${ev.dmg}${threatIco(t.type, 2)}`, 'dmg', size);
       bump($('#threatHp'));
     }
     const gains = Object.keys(ev.gain);
@@ -475,12 +503,27 @@ async function playEvent(ev) {
     return;
   }
   if (ev.k === 'clear') {
-    const T = THREATS[ev.type];
-    sfx('bell', 0, 0.8);
+    const T = THREATS[ev.type], t = target(ev.tid);
+    t.cleared = true;
+    renderBoard(); renderHud();
+    sfx('bell', ev.tid === 'B' ? 4 : 0, 0.8);
     riser('clink', 0, 1);
-    pop(cellOf(S.threat), `${T.done[0].toUpperCase() + T.done.slice(1)}!`, 'big', 34);
+    bump(cellOf(t), 'flash');
+    pop(cellOf(t), `${ev.tid === 'B' ? 'Bonus ' : ''}${T.done}!`, 'big', 34);
     bump($('#threat'));
     await wait(STEP.clear);
+    return;
+  }
+  if (ev.k === 'spawn') {
+    S.bonus = { ...ev.bonus };
+    renderBoard(); renderHud();
+    const cell = cellOf(S.bonus);
+    sfx('bell', 7, 0.5);
+    bump(cell, 'flash');
+    pop(cell, '★ Bonus!', 'big', 28);
+    pop($('#threat'), 'Optional', 'info', 18);
+    bump($('#threat'));
+    await wait(STEP.spawn);
     return;
   }
   if (ev.k === 'meal') {
@@ -523,7 +566,7 @@ async function playEvent(ev) {
     const box = $('#coinsBox');
     const k = Math.min(ev.n, 8);
     for (let i = 0; i < k; i++) {
-      fly(cellOf(S.threat) || homeCell(), box, ico('coins', 2), 420 + i * 60).then(() => {
+      fly(cellOf(target(ev.tid) || S.threat), box, ico('coins', 2), 420 + i * 60).then(() => {
         sfx('clink', 4 + semis(i + 3), 0.6);
         if (i === k - 1) { S.res.coins += ev.n; if (anim) renderTop(); }
         bump(box);
@@ -589,7 +632,7 @@ function onClick(e) {
       toast(freeWorkers().length ? 'Pick a villager first.' : 'Everyone is busy. Press End turn.');
       return;
     }
-    if (plansHere.length && id !== 'T') { unassign(plansHere[0].wid); sfx('select', -4, 0.7); return render(); }
+    if (plansHere.length && !target(id).isThreat) { unassign(plansHere[0].wid); sfx('select', -4, 0.7); return render(); }
     const r = assign(sel.id, id);
     if (!r.ok && r.why) toast(r.why, true);
     else if (r.ok) sfx('place', S.plans.length * 2, 0.9);

@@ -182,6 +182,16 @@ button.tile:active .art { transform: translateY(1px); }
 .tile.foe.fire .pill { background: var(--fire); }
 .tile.foe.monsters .pill { background: var(--monster); }
 .tile.foe .pill.dmgpv { top: auto; bottom: 20px; background: var(--gold); color: var(--ink); }
+/* optional bonus threat: gold-starred, dashed frame */
+.tile.foe.bonus::after { box-shadow: inset 0 0 0 2px var(--gold), inset 0 0 0 4px var(--ink); }
+.tile.foe.bonus .pill { border-color: var(--ink); box-shadow: 0 0 0 2px var(--gold); }
+.star { color: var(--gold); text-shadow: 1px 0 var(--ink), -1px 0 var(--ink), 0 1px var(--ink), 0 -1px var(--ink); margin-right: 1px; }
+.card-title .star { font-size: .9em; }
+/* a stopped threat: quiet, not clickable */
+.tile.foe.cleared .art { filter: grayscale(.6) brightness(.85); }
+.tile.foe.cleared .pill.done { background: var(--good); color: #fff; }
+.card.threat.bonus { background: #fff4cf; }
+.card.threat.calm { background: #e3f3d2; }
 .flame { position: absolute; font-size: calc(11px * var(--px)); line-height: 1; animation: flick .5s steps(2) infinite alternate; filter: drop-shadow(0 0 4px rgba(255,140,40,.8)); z-index: 1; }
 @keyframes flick { from { transform: translateY(0) scale(1); } to { transform: translateY(-2px) scale(1.12, .92); } }
 .tile.foe.fire .art { filter: sepia(.35) saturate(1.4) hue-rotate(-12deg); }

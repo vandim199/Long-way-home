@@ -1,7 +1,7 @@
 # Long Way Home — Game Design Document
 
 *Working title.* Single-screen worker-placement roguelike.
-**Status:** playable web prototype v0.2 (Nov 2026). One season playtested by the designer: "looks solid, could be improved."
+**Status:** playable web prototype v0.3 (Nov 2026). One season playtested by the designer: "looks solid, could be improved."
 
 This document is the source of truth for the design. The numbers live in `src/logic.js` (`CFG` and the tables at the top). If this doc and the code disagree, decide which one is right and fix the other.
 
@@ -32,10 +32,10 @@ Send villagers out from your home to fields, wells, forests and workshops. They 
 ## 4. Structure
 
 - **Run:** 8 seasons. Survive all 8 to win.
-- **Season:** up to 8 turns. One threat must be brought to 0 by the end of turn 8. Meals happen after turn 4 and at season end. Clearing the threat early ends the season right away and pays a bigger bounty.
+- **Season:** always 8 turns. One threat must be brought to 0 by the end of turn 8. Meals happen after turn 4 and after turn 8. Stopping the threat early pays its bounty immediately (bigger the earlier it is) and the season carries on: the remaining turns are free for farming and stocking up, and an optional bonus threat appears (§8).
 - **Turn:**
   1. **Plan.** Assign any number of villagers who are home to spaces. Payouts are previewed on the tiles.
-  2. **End turn.** All payouts resolve together, then villagers depart. Villagers already out walk one step home, and anyone who arrives unlocks their space. Free gathering spaces grow. The threat grows if nobody fought it this turn. Then the meal check, if it's a meal turn.
+  2. **End turn.** All payouts resolve together, then villagers depart. Villagers already out walk one step home, and anyone who arrives unlocks their space. Free gathering spaces grow. If the threat reached 0 it's stopped and the bounty is paid; otherwise it grows if nobody fought it this turn. Then the meal check, if it's a meal turn.
 - **Between seasons:** the market (see §9). Everyone comes home and all spaces unlock. Piles carry over.
 
 ## 5. Board
@@ -44,7 +44,7 @@ Send villagers out from your home to fields, wells, forests and workshops. They 
 - **Random layout each run.** 8 spaces: 3 at distance 1, 3 at distance 2, 2 at distance 3.
   - The Bakery and Fletcher are never at distance 3. The Mine is never at distance 1.
   - Spaces: Field ×2, Well, Forest, Bakery, Fletcher, Mine, plus one extra Field, Well or Forest.
-- Each season the threat appears on a free cell at distance 2–3.
+- Each season the threat appears on a free cell at distance 2–3. The bonus threat, if it appears, takes another free cell at distance 2–3.
 
 ## 6. Spaces
 
@@ -82,7 +82,13 @@ Send villagers out from your home to fields, wells, forests and workshops. They 
 - Strength in season *s* = 5 + 2(s − 1). It grows by 1 + floor((s − 1)/3) on any turn nobody fights it.
 - Each villager delivers up to their carry. Brave adds +2 damage, even with nothing to deliver.
 - **Not stopped by end of turn 8: the run is over.**
-- **Bounty** for clearing it = 3 + season + unused turns.
+- **Bounty** for stopping it = 3 + season + unused turns, paid the turn it's stopped. The season still runs to turn 8.
+
+**Bonus threat (optional)**
+- Appears as soon as the season's threat is stopped (unless that happened on turn 8). It's the other type: stopping fire summons a bonus monster band, and vice versa. So chasing it usually means setting up a supply chain you haven't been using this season.
+- Strength 5 + 2(s − 1), the same as the season's starting threat. It never grows and ignoring it costs nothing. It leaves at season end.
+- Reward for stopping it by the end of turn 8: 3 + season 🪙.
+- The point: early victory buys free turns, and the player chooses between safe farming (bread for the meals ahead) and a second payday.
 
 **Food**
 - Meals after turn 4 and at season end.
@@ -93,7 +99,7 @@ Send villagers out from your home to fields, wells, forests and workshops. They 
 
 ## 9. Economy and market
 
-**Coins** come from the Mine, the Golden modifier and season bounties.
+**Coins** come from the Mine, the Golden modifier, season bounties and bonus-threat rewards.
 
 **Market:** 3 random offers after each season. New offers cost 2🪙, and each further reroll costs 1 more. Buy as many as you can afford. Targeted upgrades go into "pick a target" mode, and cancelling is free.
 
@@ -115,9 +121,11 @@ Send villagers out from your home to fields, wells, forests and workshops. They 
 
 ## 10. Balance notes
 
-- `npm run sim` runs a naive bot through 2000 runs. As of v0.1 it clears season 1 about 94% of the time and wins the full run about 2%. Humans should do much better. Treat the bot as a floor and a crash detector, not as a target.
+- `npm run sim` runs a naive bot through 2000 runs. Treat the bot as a floor and a crash detector, not as a target. The bot never fights the bonus threat.
+  - v0.1: clears season 1 about 94% of the time, wins the full run about 2%.
+  - **v0.3 (seasons always last 8 turns): clears season 1 about 93%, wins the full run about 39%.** The jump comes from the free turns after an early clear, not from the bounty: cutting the early-clear coin bonus barely moved it (35–36%). In v0.1 an early clear triggered the season-end meal before anything could be baked. If the game now feels too easy, the levers are threat strength/growth, meal size, or a later meal turn, not the bounty.
 - Monsters were far harder than fire at first (the bot lost to them about 20× as often), because they need three kinds of trips instead of two. Fixed by making each arrow deal 2 damage and setting the Fletcher ratio to 1.
-- Hunger is the bot's most common loss. Watch whether humans feel the same.
+- Hunger is still the bot's most common loss (about 32% of runs in v0.3), then monsters (about 24%). Watch whether humans feel the same.
 
 ## 11. Known issues and open questions
 
@@ -147,5 +155,6 @@ Send villagers out from your home to fields, wells, forests and workshops. They 
 
 ## Changelog
 
+- **v0.3 (2026-11-11):** stopping the threat no longer ends the season. Bounty is paid at once, the season runs to turn 8 (both meals still happen), and an optional bonus threat of the other type appears with its own reward. Monster tiles show only creatures (no human-looking sprite). Bot win rate rose from about 2% to about 39%.
 - **v0.2 (2026-11-11):** visual and audio pass, no rule changes. Pixel-art farm theme with Kenney assets, sequenced end-of-turn replay with popups, flying icons and rising-pitch sounds, mute toggle. `endTurn()` now returns `report.events`.
 - **v0.1 (2026-11-11):** first playable. Core loop, 6 space types, 2 threats, food, market with 11 offers, stackable modifiers, headless bot sim.

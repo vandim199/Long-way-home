@@ -9,7 +9,9 @@ const CFG = {
   start: { wheat: 2, bread: 3, water: 1, wood: 1, arrows: 0, coins: 2 },
   threatHp: s => 5 + 2 * (s - 1),
   threatGrowth: s => 1 + Math.floor((s - 1) / 3),
-  bounty: (s, unused) => 3 + s + unused,
+  bounty: (s, unused) => 3 + s + unused,   // paid the moment the season's threat is stopped
+  bonusHp: s => 5 + 2 * (s - 1),           // optional bonus threat that appears once the main one is stopped
+  bonusBounty: s => 3 + s,
 };
 
 const RES = ['wheat', 'bread', 'water', 'wood', 'arrows'];
@@ -68,13 +70,14 @@ const gatherBase = sp => TYPES[sp.type].base + (sp.dist - 1);
 const gatherAmt = (sp, w) => gatherBase(sp) + sp.pile + (w ? 2 * cnt(w, 'forager') : 0);
 const travelOf = (t, w) => Math.max(1, t.dist - (t.road || 0) - (w ? cnt(w, 'swift') : 0));
 const W = id => S.workers.find(w => w.id === id);
-const target = id => (id === 'T' ? S.threat : S.spaces.find(s => s.id === id));
+const target = id => (id === 'T' ? S.threat : id === 'B' ? S.bonus : S.spaces.find(s => s.id === id));
+const threats = () => [S.threat, S.bonus].filter(t => t && !t.cleared);
 const planOf = wid => S.plans.find(p => p.wid === wid);
 const isFree = w => w.away === 0 && !planOf(w.id);
 const freeWorkers = () => S.workers.filter(isFree);
 const avail = r => S.res[r] - S.plans.reduce((a, p) => a + (p.cost[r] || 0), 0);
 const incoming = r => S.plans.reduce((a, p) => a + (p.gain[r] || 0), 0);
-const plannedDmg = () => S.plans.reduce((a, p) => a + (p.dmg || 0), 0);
+const plannedDmg = (tid = 'T') => S.plans.reduce((a, p) => a + (p.tid === tid ? p.dmg || 0 : 0), 0);
 const nextMealIsMid = () => S.turn <= CFG.mealTurn;
 function upgradePrice(id) {
   if (id === 'worker') return 7 + 4 * S.bought.worker;
@@ -116,13 +119,26 @@ function newThreat() {
   const free = [...cellsAt(2), ...cellsAt(3)].filter(c => !taken.has(c.x + ',' + c.y));
   const c = pick(free);
   const type = S.nextThreat;
-  S.threat = { id: 'T', isThreat: true, type, x: c.x, y: c.y, dist: dist(c), hp: CFG.threatHp(S.season), max: CFG.threatHp(S.season), growth: CFG.threatGrowth(S.season) };
+  S.threat = { id: 'T', isThreat: true, type, x: c.x, y: c.y, dist: dist(c), hp: CFG.threatHp(S.season), max: CFG.threatHp(S.season), growth: CFG.threatGrowth(S.season), cleared: false };
+  S.bonus = null;
   S.nextThreat = type === 'fire' ? 'monsters' : 'fire';
+}
+
+// Optional: the other threat type, on another free cell. Never grows, never ends the run.
+function spawnBonus() {
+  const taken = new Set([...S.spaces, S.threat].map(s => s.x + ',' + s.y));
+  const free = [...cellsAt(2), ...cellsAt(3)].filter(c => !taken.has(c.x + ',' + c.y));
+  if (!free.length) return null;
+  const c = pick(free);
+  const type = S.threat.type === 'fire' ? 'monsters' : 'fire';
+  const hp = CFG.bonusHp(S.season);
+  S.bonus = { id: 'B', isThreat: true, bonus: true, type, x: c.x, y: c.y, dist: dist(c), hp, max: hp, growth: 0, cleared: false };
+  return S.bonus;
 }
 
 function newRun() {
   S = {
-    season: 1, turn: 1, hearts: CFG.startHearts, res: { ...CFG.start }, workers: [], spaces: [], threat: null,
+    season: 1, turn: 1, hearts: CFG.startHearts, res: { ...CFG.start }, workers: [], spaces: [], threat: null, bonus: null, notes: [],
     plans: [], phase: 'play', selected: null, log: ['Tap a villager, then a space. Press End turn to collect.'],
     shop: null, pending: null, bought: { worker: 0 }, nextId: 1, namePool: shuffle([...NAMES]),
     nextThreat: pick(['fire', 'monsters']), over: null, stats: { turns: 0 },
@@ -171,6 +187,7 @@ function assign(wid, tid) {
   const w = W(wid), t = target(tid);
   if (!w || !t) return { ok: false };
   if (!isFree(w)) return { ok: false, why: `${w.name} isn't home.` };
+  if (t.isThreat && (t.cleared || t.hp - plannedDmg(tid) <= 0)) return { ok: false, why: t.cleared ? `The ${THREATS[t.type].name.toLowerCase()} is already dealt with.` : 'Enough villagers are already heading there to finish it.' };
   if (!t.isThreat) {
     if (t.lockedBy) { const o = W(t.lockedBy); return { ok: false, why: `${o ? o.name : 'Someone'} is still walking back from here.` }; }
     if (S.plans.some(p => p.tid === tid)) return { ok: false, why: 'Someone is already going there this turn.' };
@@ -210,13 +227,13 @@ function endTurn() {
     const w = W(p.wid), t = target(p.tid);
     for (const r in p.cost) S.res[r] -= p.cost[r];
     for (const r in p.gain) { S.res[r] += p.gain[r]; got[r] = (got[r] || 0) + p.gain[r]; }
-    if (t.isThreat) { S.threat.hp = Math.max(0, S.threat.hp - p.dmg); fought = true; }
+    if (t.isThreat) { t.hp = Math.max(0, t.hp - p.dmg); if (t === S.threat) fought = true; }
     else {
       if (TYPES[t.type].kind === 'gather') t.pile = 0;
       t.lockedBy = w.id;
     }
     w.away = p.travel; w.at = p.tid; w.fresh = true;
-    report.events.push({ k: 'act', wid: w.id, tid: p.tid, gain: { ...p.gain }, cost: { ...p.cost }, dmg: p.dmg || 0, travel: p.travel, hp: S.threat.hp });
+    report.events.push({ k: 'act', wid: w.id, tid: p.tid, gain: { ...p.gain }, cost: { ...p.cost }, dmg: p.dmg || 0, travel: p.travel, hp: t.isThreat ? t.hp : null });
   }
   const gotTxt = Object.keys(got).map(r => `+${got[r]}${ICON[r]}`).join(' ');
   if (gotTxt) report.log.push('Collected ' + gotTxt + '.');
@@ -228,8 +245,8 @@ function endTurn() {
       w.away--;
       const from = w.at;
       if (w.away === 0) {
-        const sp = w.at === 'T' ? null : target(w.at);
-        if (sp && sp.lockedBy === w.id) sp.lockedBy = null;
+        const sp = target(w.at);
+        if (sp && !sp.isThreat && sp.lockedBy === w.id) sp.lockedBy = null;
         w.at = null;
       }
       report.events.push({ k: 'step', wid: w.id, tid: from, away: w.away });
@@ -246,18 +263,46 @@ function endTurn() {
   if (fought) report.log.push(`${T.name} ${before} → ${S.threat.hp}.`);
   S.stats.turns++;
   S.log = report.log;
-  if (S.threat.hp <= 0) { finishSeason(report); return report; }
-  if (!fought) {
+
+  // the season's threat stopped: pay the bounty now, then the season carries on to the last turn
+  if (!S.threat.cleared && S.threat.hp <= 0) {
+    S.threat.cleared = true;
+    const b = CFG.bounty(S.season, CFG.turns - S.turn);
+    S.res.coins += b;
+    const line = `${T.name} ${T.done} on turn ${S.turn}. Bounty +${b}🪙.`;
+    report.events.push({ k: 'clear', tid: 'T', type: S.threat.type }, { k: 'bounty', tid: 'T', n: b });
+    report.log.unshift(line);
+    S.notes.push(line);
+    const bo = S.turn < CFG.turns && spawnBonus();
+    if (bo) {
+      report.events.push({ k: 'spawn', bonus: { ...bo } });
+      report.log.push(`Bonus: ${THREATS[bo.type].name.toLowerCase()} appeared (strength ${bo.hp}). Optional, +${CFG.bonusBounty(S.season)}🪙 if stopped by turn ${CFG.turns}.`);
+    }
+  } else if (!S.threat.cleared && !fought) {
     S.threat.hp += S.threat.growth;
     report.events.push({ k: 'tgrow', n: S.threat.growth, hp: S.threat.hp });
     report.log.push(`${T.name} grew to ${S.threat.hp}.`);
+  }
+  if (S.bonus && !S.bonus.cleared && S.bonus.hp <= 0) {
+    S.bonus.cleared = true;
+    const BT = THREATS[S.bonus.type];
+    const b = CFG.bonusBounty(S.season);
+    S.res.coins += b;
+    const line = `Bonus ${BT.name.toLowerCase()} ${BT.done}. +${b}🪙.`;
+    report.events.push({ k: 'clear', tid: 'B', type: S.bonus.type }, { k: 'bounty', tid: 'B', n: b });
+    report.log.push(line);
+    S.notes.push(line);
   }
 
   if (S.turn === CFG.mealTurn) meal(report, 'Meal');
   if (S.hearts <= 0) { lose('Your village went hungry.'); return report; }
   if (S.turn >= CFG.turns) {
-    lose(S.threat.type === 'fire' ? 'The fire burned through the village.' : 'The monsters overran the village.');
-    report.events.push({ k: 'overrun' });
+    if (!S.threat.cleared) {
+      lose(S.threat.type === 'fire' ? 'The fire burned through the village.' : 'The monsters overran the village.');
+      report.events.push({ k: 'overrun' });
+      return report;
+    }
+    finishSeason(report);
     return report;
   }
   S.turn++;
@@ -272,22 +317,18 @@ function recallAll() {
   S.plans = [];
 }
 
+// end of the last turn, with the season's threat already stopped
 function finishSeason(report) {
-  const T = THREATS[S.threat.type];
-  report.events.push({ k: 'clear', type: S.threat.type });
+  if (S.bonus && !S.bonus.cleared) report.log.push(`The bonus ${THREATS[S.bonus.type].name.toLowerCase()} wandered off.`);
   meal(report, 'Season-end meal');
   recallAll();
   report.events.push({ k: 'recall' });
   if (S.hearts <= 0) { lose('Your village went hungry.'); return; }
-  const unused = CFG.turns - S.turn;
-  const b = CFG.bounty(S.season, unused);
-  S.res.coins += b;
-  report.events.push({ k: 'bounty', n: b });
-  report.log.unshift(`${T.name} ${T.done} on turn ${S.turn}. Bounty +${b}🪙.`);
   S.log = report.log;
   if (S.season >= CFG.seasons) { S.phase = 'won'; S.over = { win: true, why: `You survived all ${CFG.seasons} seasons.` }; return; }
   S.phase = 'shop';
-  S.shop = { offers: rollOffers(), reroll: 2, summary: report.log.slice() };
+  const summary = [...S.notes, ...report.log.filter(l => !S.notes.includes(l))];
+  S.shop = { offers: rollOffers(), reroll: 2, summary };
 }
 
 function lose(why) {
@@ -372,6 +413,7 @@ function nextSeason() {
   if (S.phase !== 'shop') return;
   S.season++;
   S.turn = 1;
+  S.notes = [];
   newThreat();
   S.phase = 'play';
   S.shop = null;
@@ -383,5 +425,5 @@ function nextSeason() {
 if (typeof module !== 'undefined') {
   module.exports = { CFG, TYPES, THREATS, MODS, UPGRADES, ICON, RES, get S() { return S; }, set S(v) { S = v; },
     newRun, assign, unassign, endTurn, buy, applyTarget, cancelTarget, nextSeason, reroll, preview, freeWorkers,
-    target, W, avail, incoming, totalAppetite, appetite, validTarget, upgradePrice, offerDef, gatherAmt, plannedDmg };
+    target, threats, W, avail, incoming, totalAppetite, appetite, validTarget, upgradePrice, offerDef, gatherAmt, plannedDmg };
 }
