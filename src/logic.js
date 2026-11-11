@@ -2,15 +2,15 @@
 const CFG = {
   seasons: 8,
   turns: 8,
-  mealTurn: 4,
+  mealTurns: [3, 6],       // mid-season meals; there's always one more after the last turn
   startHearts: 5,
   maxHearts: 5,
   carry: 3,
-  start: { wheat: 2, bread: 3, water: 1, wood: 1, arrows: 0, coins: 2 },
-  threatHp: s => 5 + 2 * (s - 1),
-  threatGrowth: s => 1 + Math.floor((s - 1) / 3),
+  start: { wheat: 2, bread: 5, water: 1, wood: 1, arrows: 0, coins: 2 },
+  threatHp: s => 5 + 4 * (s - 1),
+  threatGrowth: s => 1 + Math.floor((s - 1) / 2),
   bounty: (s, unused) => 3 + s + unused,   // paid the moment the season's threat is stopped
-  bonusHp: s => 5 + 2 * (s - 1),           // optional bonus threat that appears once the main one is stopped
+  bonusHp: s => 5 + 4 * (s - 1),           // optional bonus threat that appears once the main one is stopped
   bonusBounty: s => 3 + s,
 };
 
@@ -68,7 +68,8 @@ const growth = sp => 1 + sp.fert;
 const ratio = sp => TYPES[sp.type].ratio + sp.tools;
 const gatherBase = sp => TYPES[sp.type].base + (sp.dist - 1);
 const gatherAmt = (sp, w) => gatherBase(sp) + sp.pile + (w ? 2 * cnt(w, 'forager') : 0);
-const travelOf = (t, w) => Math.max(1, t.dist - (t.road || 0) - (w ? cnt(w, 'swift') : 0));
+// threats are always a 1-turn round trip; spaces cost their distance
+const travelOf = (t, w) => (t.isThreat ? 1 : Math.max(1, t.dist - (t.road || 0) - (w ? cnt(w, 'swift') : 0)));
 const W = id => S.workers.find(w => w.id === id);
 const target = id => (id === 'T' ? S.threat : id === 'B' ? S.bonus : S.spaces.find(s => s.id === id));
 const threats = () => [S.threat, S.bonus].filter(t => t && !t.cleared);
@@ -78,7 +79,7 @@ const freeWorkers = () => S.workers.filter(isFree);
 const avail = r => S.res[r] - S.plans.reduce((a, p) => a + (p.cost[r] || 0), 0);
 const incoming = r => S.plans.reduce((a, p) => a + (p.gain[r] || 0), 0);
 const plannedDmg = (tid = 'T') => S.plans.reduce((a, p) => a + (p.tid === tid ? p.dmg || 0 : 0), 0);
-const nextMealIsMid = () => S.turn <= CFG.mealTurn;
+const nextMeal = () => CFG.mealTurns.find(m => m >= S.turn) || CFG.turns;
 function upgradePrice(id) {
   if (id === 'worker') return 7 + 4 * S.bought.worker;
   if (MODS[id]) return MODS[id].price;
@@ -294,7 +295,7 @@ function endTurn() {
     S.notes.push(line);
   }
 
-  if (S.turn === CFG.mealTurn) meal(report, 'Meal');
+  if (CFG.mealTurns.includes(S.turn) && S.turn < CFG.turns) meal(report, 'Meal');
   if (S.hearts <= 0) { lose('Your village went hungry.'); return report; }
   if (S.turn >= CFG.turns) {
     if (!S.threat.cleared) {
@@ -425,5 +426,5 @@ function nextSeason() {
 if (typeof module !== 'undefined') {
   module.exports = { CFG, TYPES, THREATS, MODS, UPGRADES, ICON, RES, get S() { return S; }, set S(v) { S = v; },
     newRun, assign, unassign, endTurn, buy, applyTarget, cancelTarget, nextSeason, reroll, preview, freeWorkers,
-    target, threats, W, avail, incoming, totalAppetite, appetite, validTarget, upgradePrice, offerDef, gatherAmt, plannedDmg };
+    target, threats, nextMeal, W, avail, incoming, totalAppetite, appetite, validTarget, upgradePrice, offerDef, gatherAmt, plannedDmg };
 }

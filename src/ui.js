@@ -209,7 +209,8 @@ function renderHud() {
   const need = totalAppetite();
   const have = S.res.bread, inc = incoming('bread'), out = S.plans.reduce((a, p) => a + (p.cost.bread || 0), 0);
   const proj = have + inc - out;
-  const when = S.turn < CFG.mealTurn ? `after turn ${CFG.mealTurn}` : S.turn === CFG.mealTurn ? 'after this turn' : 'at season end';
+  const nm = nextMeal();
+  const when = nm === S.turn ? 'after this turn' : nm === CFG.turns ? `at season end (turn ${CFG.turns})` : `after turn ${nm}`;
   const short = proj < need;
   $('#meal').className = 'card panel meal' + (short ? ' short' : '');
   $('#meal').innerHTML = `
@@ -383,8 +384,8 @@ function renderOverlay() {
         <li><b>The long way home.</b> 👣 is how many turns the villager stays away. Until they're back, you can't use that villager <i>or</i> that space.</li>
         <li><b>Piles grow.</b> A gathering space grows +1 every turn nobody is using it. Far spaces start bigger.</li>
         <li><b>Converting needs stock.</b> The Bakery (red cottage) and Fletcher (archery range) only use what's already in your store, not what's arriving this turn.</li>
-        <li><b>Meals.</b> After turn ${CFG.mealTurn} and at season end, each villager eats ${ico('bread')}. Each missing bread costs a heart. At 0 hearts the run ends.</li>
-        <li><b>The threat.</b> Fight it by sending villagers with ${ico('water')} (fire) or ${ico('arrows')} (monsters, 2 damage each). Each carries ${CFG.carry}. Any number can go at once. It grows on turns you don't fight it. Stop it by turn ${CFG.turns} or the run ends. The season always lasts ${CFG.turns} turns, so stopping it early leaves free turns to farm.</li>
+        <li><b>Meals.</b> After turn ${CFG.mealTurns.join(', ')} and at season end, each villager eats ${ico('bread')}. Each missing bread costs a heart. At 0 hearts the run ends.</li>
+        <li><b>The threat.</b> Fight it by sending villagers with ${ico('water')} (fire) or ${ico('arrows')} (monsters, 2 damage each). Each carries ${CFG.carry}. Any number can go at once, and fighters are always back next turn (👣1). It grows on turns you don't fight it. Stop it by turn ${CFG.turns} or the run ends. The season always lasts ${CFG.turns} turns, so stopping it early leaves free turns to farm.</li>
         <li><b>Bonus threat.</b> Once the season's threat is stopped, a <span class="star">★</span> bonus threat of the other kind appears. It's optional: it never grows and ignoring it costs nothing, but stopping it pays extra ${ico('coins')}.</li>
         <li><b>Market.</b> After turn ${CFG.turns}. Stopping the threat early pays a bigger bounty. Spend coins between seasons on villagers, modifiers and space upgrades.</li>
       </ul>
