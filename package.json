@@ -1,10 +1,11 @@
 {
   "name": "long-way-home",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Single-screen worker-placement roguelike (web prototype)",
   "scripts": {
     "build": "node tools/build.js",
-    "sim": "node tools/sim.js 2000"
+    "sim": "node tools/sim.js 2000",
+    "sweep": "node tools/sweep.js 600"
   }
 }

@@ -149,6 +149,20 @@ button.tile:active .art { transform: translateY(1px); }
 .pill .sp { --k: 1; }
 .pill em { font-style: normal; font-size: 11px; margin: 0 1px; }
 .pill small { font-size: 11px; margin-left: 1px; }
+.pill small.pour { color: #1d6fa5; display: inline-flex; align-items: center; }
+.pill small.dry { color: var(--wood-dk); text-transform: uppercase; }
+/* soaked water on a Field: what it will keep growing from */
+.soak { position: absolute; right: 2px; bottom: 2px; display: flex; align-items: center; gap: 0; background: #d6ecfb; border: 2px solid var(--ink); border-radius: 4px; padding: 0 3px 0 1px; height: 17px; font-family: var(--font-px); font-size: 14px; line-height: 1; z-index: 2; }
+.soak .sp { --k: 1; }
+.tile.t-field .who, .tile.t-field .walker { bottom: 16px; }
+.tile.t-field .bubble { top: 22px; }
+@media (min-width: 640px) { .tile.t-field .who, .tile.t-field .walker { bottom: 24px; } .tile.t-field .bubble { top: 32px; } }
+.soak { z-index: 3; }
+.soak .hold { font-style: normal; color: var(--bad); margin-left: 2px; }
+.soak .pour { font-style: normal; color: #1d6fa5; margin-left: 1px; }
+.soak.dry { background: #ecd9b8; color: var(--wood-dk); }
+.soak.dry .sp { filter: grayscale(1) opacity(.6); }
+@media (min-width: 640px) { .soak { height: 24px; font-size: 19px; right: 4px; bottom: 4px; } .soak .sp { --k: 1.5; } }
 .tile.planned .pill { background: var(--gold); }
 .trav { position: absolute; left: 2px; bottom: 2px; background: var(--parch); color: var(--ink); border: 2px solid var(--ink); font-family: var(--font-px); font-size: 14px; font-weight: 700; border-radius: 4px; padding: 0 2px; line-height: 13px; z-index: 2; }
 .trav::first-letter { font-size: 10px; }
@@ -275,7 +289,8 @@ button.tile:active .art { transform: translateY(1px); }
 .pop.dmg { color: #ffe08a; }
 .pop.info { color: #fff; --fs: 16px; }
 .pop.big { --fs: 34px; color: var(--gold); }
-.pop .sub { font-size: .62em; color: #ffd0c4; margin-left: 4px; }
+.pop .sub { font-size: .62em; color: #ffd0c4; margin-left: 4px; display: inline-flex; align-items: center; }
+.pop .sub.water { color: #bfe6ff; }
 @keyframes pop-rise {
   0% { opacity: 0; transform: translate(-50%, -40%) scale(.3); }
   12% { opacity: 1; transform: translate(-50%, -80%) scale(1.4) rotate(var(--rot, -4deg)); }

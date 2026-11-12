@@ -275,11 +275,12 @@ function tileHTML(x, y) {
   } else {
     const ty = TYPES[spc.type];
     label = ty.name;
-    cls += ' ' + ty.kind;
+    cls += ' ' + ty.kind + ' t-' + spc.type;
     body = art(SPACE_ART[spc.type](h));
     let mid;
     if (ty.kind === 'gather') mid = `<span>${gatherAmt(spc, sel || null)}</span>${ico(ty.res)}`;
-    else mid = `${ico(ty.from)}<em>→</em>${ico(ty.to)}${ratio(spc) > 1 ? `<small>×${ratio(spc)}</small>` : ''}`;
+    else mid = `<span>${ty.in}</span>${ico(ty.from)}<em>▸</em><span>${batchOut(spc, sel || null)}</span>${ico(ty.to)}`;
+    if (ty.waters) label += spc.soak ? `, ${spc.soak} water soaked (+${growth(spc)} wheat per turn)` : ', dry';
     const extras = (spc.fert ? '🌱' : '') + (spc.road ? '🛤️' : '') + (spc.tools ? '⚒️' : '');
     if (spc.lockedBy) {
       const w = W(spc.lockedBy);
@@ -287,7 +288,13 @@ function tileHTML(x, y) {
       label += `, ${w.name} back in ${w.away}`;
       body += `<span class="walker" style="--wc:${w.color}">${vsp(w)}<span class="ring"></span></span><span class="bubble">${w.away}</span>`;
     } else {
-      body += `<span class="pill">${plans.length ? gainHTML(plans[0]) : mid}</span><span class="trav">👣${travel}</span>${extras ? `<span class="ext">${extras}</span>` : ''}`;
+      const p = plans[0];
+      const pv = p ? gainHTML(p) : mid;
+      body += `<span class="pill">${pv}</span><span class="trav">👣${travel}</span>${extras ? `<span class="ext">${extras}</span>` : ''}`;
+    }
+    if (ty.waters) {
+      const pour = !spc.lockedBy && plans[0] && plans[0].pour;
+      body += `<span class="soak ${spc.soak || pour ? '' : 'dry'}" title="Soaked water">${ico('water')}<b>${spc.soak}</b>${pour ? `<i class="pour">+${pour}</i>` : ''}${!spc.lockedBy && plans[0] && plans[0].dry ? '<i class="hold" title="Harvest only">✕</i>' : ''}</span>`;
     }
   }
   if (plans.length) {
@@ -318,7 +325,7 @@ function renderCrew() {
     const p = planOf(w.id);
     let st, cls = 'worker panel';
     if (w.away > 0) { st = `Walking home · ${w.away}`; cls += ' away'; }
-    else if (p) { const t = target(p.tid); st = `→ ${t.isThreat ? THREATS[t.type].name : TYPES[t.type].name}`; cls += ' planned'; }
+    else if (p) { const t = target(p.tid); st = `→ ${t.isThreat ? THREATS[t.type].name : TYPES[t.type].name}${p.dry ? ' (harvest only)' : ''}`; cls += ' planned'; }
     else st = S.selected === w.id ? 'Ready' : 'Home';
     if (S.selected === w.id && S.phase === 'play' && !anim) cls += ' sel';
     if (S.phase === 'target' && validTarget(S.pending.id, w)) cls += ' targetable';
@@ -382,10 +389,11 @@ function renderOverlay() {
       <ul class="rules">
         <li><b>Send villagers.</b> Tap a villager, then a space. Send as many as you like, then press <b>End turn</b>. Everything pays out at the end of the turn.</li>
         <li><b>The long way home.</b> 👣 is how many turns the villager stays away. Until they're back, you can't use that villager <i>or</i> that space.</li>
-        <li><b>Piles grow.</b> A gathering space grows +1 every turn nobody is using it. Far spaces start bigger.</li>
-        <li><b>Converting needs stock.</b> The Bakery (red cottage) and Fletcher (archery range) only use what's already in your store, not what's arriving this turn.</li>
+        <li><b>Piles grow.</b> Wells, Forests and the Mine grow +1 every turn nobody is using them. Far spaces start bigger.</li>
+        <li><b>Water your fields.</b> A Field visit harvests the wheat and pours up to ${CFG.carry} ${ico('water')} into the soil. Each free turn, the field turns 1 soaked ${ico('water')} into +${CFG.fieldGrow} ${ico('wheat')}. A dry field doesn't grow. Tap a planned Field again for <i>harvest only</i> (keep your water), and once more to cancel.</li>
+        <li><b>Bake and fletch everything at once.</b> The Bakery turns all your wheat into bread (2 ${ico('wheat')} → 1 ${ico('bread')}); the Fletcher turns all your wood into arrows (1 ${ico('wood')} → 2 ${ico('arrows')}). They only use what's already in your store, not what's arriving this turn.</li>
         <li><b>Meals.</b> After turn ${CFG.mealTurns.join(', ')} and at season end, each villager eats ${ico('bread')}. Each missing bread costs a heart. At 0 hearts the run ends.</li>
-        <li><b>The threat.</b> Fight it by sending villagers with ${ico('water')} (fire) or ${ico('arrows')} (monsters, 2 damage each). Each carries ${CFG.carry}. Any number can go at once, and fighters are always back next turn (👣1). It grows on turns you don't fight it. Stop it by turn ${CFG.turns} or the run ends. The season always lasts ${CFG.turns} turns, so stopping it early leaves free turns to farm.</li>
+        <li><b>The threat.</b> Fight it by sending villagers with ${ico('water')} (fire) or ${ico('arrows')} (monsters). Water is also what grows your wheat, so fire seasons are hungry seasons. Each carries ${CFG.carry}. Any number can go at once, and fighters are always back next turn (👣1). It grows on turns you don't fight it. Stop it by turn ${CFG.turns} or the run ends. The season always lasts ${CFG.turns} turns, so stopping it early leaves free turns to farm.</li>
         <li><b>Bonus threat.</b> Once the season's threat is stopped, a <span class="star">★</span> bonus threat of the other kind appears. It's optional: it never grows and ignoring it costs nothing, but stopping it pays extra ${ico('coins')}.</li>
         <li><b>Market.</b> After turn ${CFG.turns}. Stopping the threat early pays a bigger bounty. Spend coins between seasons on villagers, modifiers and space upgrades.</li>
       </ul>
@@ -423,6 +431,7 @@ async function playEvent(ev) {
   if (ev.k === 'act') {
     const w = W(ev.wid), t = target(ev.tid);
     S.plans = S.plans.filter(p => p.wid !== ev.wid);
+    if (ev.pour && !t.isThreat) t.soak = ev.soak;
     for (const r in ev.cost) S.res[r] -= ev.cost[r];
     renderRes(); renderHud(); renderBoard();
     await fly(homeCell(), cellOf(t), vsp(w), 300);
@@ -443,7 +452,7 @@ async function playEvent(ev) {
     const gains = Object.keys(ev.gain);
     if (gains.length) {
       if (!ev.dmg) riser('clink', 0, 0.9);
-      const costTxt = Object.keys(ev.cost).filter(() => !ev.dmg).map(r => `<span class="sub">−${ev.cost[r]}${ico(r)}</span>`).join('');
+      const costTxt = ev.pour ? `<span class="sub water">+${ev.pour}${ico('water')} soaked</span>` : Object.keys(ev.cost).filter(() => !ev.dmg).map(r => `<span class="sub">−${ev.cost[r]}${ico(r)}</span>`).join('');
       pop(cell, gains.map(r => `+${ev.gain[r]}${ico(r, 2)}`).join(' ') + costTxt, '', size);
       for (const r of gains) {
         fly(cell, chipOf(r), ico(r, 2), 420).then(() => {
@@ -486,9 +495,12 @@ async function playEvent(ev) {
   if (ev.k === 'pile') {
     const t = target(ev.tid);
     t.pile = ev.pile;
+    const field = TYPES[t.type].waters;
+    if (field) t.soak = ev.soak;
     renderBoard();
     const n = riser('pluck', 5, 0.7);
-    pop(cellOf(t), `+${ev.n}${ico(TYPES[t.type].res, 1)}`, 'info', 17);
+    pop(cellOf(t), `+${ev.n}${ico(TYPES[t.type].res, field ? 2 : 1)}${field ? `<span class="sub water">−1${ico('water')}</span>` : ''}`, 'info', field ? 22 : 17);
+    if (field) bump(cellOf(t).querySelector('.soak'));
     bump(cellOf(t).querySelector('.pill'));
     await wait(STEP.pile * pace(n));
     return;
@@ -627,6 +639,12 @@ function onClick(e) {
   }
   if (act === 'tile') {
     const plansHere = S.plans.filter(p => p.tid === id);
+    const tt = target(id);
+    if (plansHere.length && tt && !tt.isThreat && TYPES[tt.type].waters && !plansHere[0].dry) {
+      const r = toggleDry(plansHere[0].wid);
+      if (r.ok) { toast('Harvest only: no watering. Tap again to cancel.'); sfx('select', 3, 0.7); }
+      return render();
+    }
     const sel = S.selected && W(S.selected);
     if (!sel || !isFree(sel)) {
       if (plansHere.length) { unassign(plansHere[plansHere.length - 1].wid); sfx('select', -4, 0.7); return render(); }
@@ -663,7 +681,7 @@ function paintField() {
 }
 
 function start(data) {
-  if (data && data.S && data.S.workers && data.S.threat) S = data.S;
+  if (data && data.S && data.S.v === STATE_V && data.S.workers && data.S.threat) S = data.S;
   else newRun();
   document.addEventListener('click', onClick);
   document.addEventListener('pointerdown', audioInit, { once: true });
