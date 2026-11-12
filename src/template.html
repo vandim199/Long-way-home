@@ -123,6 +123,7 @@ button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 .chip .rout, .chip .rin { font-family: var(--font-px); font-size: 11px; font-weight: 700; line-height: 1; padding: 1px 3px; border-radius: 3px; border: 2px solid var(--ink); }
 .chip .rout { background: #ffd9cf; color: var(--bad); }
 .chip .rin { background: #d9f2c4; color: var(--good); }
+.chip .rtr { background: #d6ecfb; color: #1d6fa5; font-family: var(--font-px); font-size: 11px; font-weight: 700; line-height: 1; padding: 1px 3px; border-radius: 3px; border: 2px solid var(--ink); }
 
 /* board */
 .banner { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--gold); border: 3px solid var(--ink); border-radius: 6px; box-shadow: 0 3px 0 var(--ink); padding: 7px 9px; font-size: 13px; }
@@ -164,6 +165,10 @@ button.tile:active .art { transform: translateY(1px); }
 .soak.dry .sp { filter: grayscale(1) opacity(.6); }
 @media (min-width: 640px) { .soak { height: 24px; font-size: 19px; right: 4px; bottom: 4px; } .soak .sp { --k: 1.5; } }
 .tile.planned .pill { background: var(--gold); }
+/* goods a walking villager is carrying home */
+.tile.locked .pill.carry { background: #e9f6dc; color: var(--good); }
+.esum .water { background: #d6ecfb; color: #1d6fa5; }
+.esum small { font-size: 12px; margin-left: 1px; }
 .trav { position: absolute; left: 2px; bottom: 2px; background: var(--parch); color: var(--ink); border: 2px solid var(--ink); font-family: var(--font-px); font-size: 14px; font-weight: 700; border-radius: 4px; padding: 0 2px; line-height: 13px; z-index: 2; }
 .trav::first-letter { font-size: 10px; }
 /* bigger badges when sprites are drawn at 3× */

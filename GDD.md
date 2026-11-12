@@ -1,7 +1,7 @@
 # Long Way Home — Game Design Document
 
 *Working title.* Single-screen worker-placement roguelike.
-**Status:** playable web prototype **v0.5** (12 Nov 2026). The economy was rebuilt after the first playtests of v0.1. Seasons now always last 8 turns, with an optional bonus threat.
+**Status:** playable web prototype **v0.6** (12 Nov 2026). Villagers carry their goods home, 👣1 means "back next turn", and watering is its own space.
 
 This document is the source of truth for the design. The numbers live in `src/logic.js` (`CFG` and the tables at the top). If this doc and the code disagree, decide which one is right and fix the other.
 
@@ -9,7 +9,7 @@ This document is the source of truth for the design. The numbers live in `src/lo
 
 ## 1. Pitch
 
-Send villagers out from your home to wells, fields, forests and workshops. They pay out at the end of the turn, then take the long way home: a villager is away for as many turns as the space is far, and that space stays locked until they're back. Water your fields, bake bread, keep everyone fed, and stop each season's threat (fire, monsters) before time runs out. Stop it early and the rest of the season is yours: stock up, or chase an optional bonus threat for a second payday. Between seasons you spend coins on a few scarce upgrades that change how you play. The run structure is Balatro's: beat each season's target or the run is over.
+Send villagers out from your home to wells, fields, forests and workshops. They take the long way home: a villager is away for as many turns as the space is far, the space stays locked until they're back, and whatever they gathered only reaches your store when they walk in the door. Water your fields, bake bread, keep everyone fed, and stop each season's threat (fire, monsters) before time runs out. Stop it early and the rest of the season is yours: stock up, or chase an optional bonus threat for a second payday. Between seasons you spend coins on a few scarce upgrades that change how you play. The run structure is Balatro's: beat each season's target or the run is over.
 
 ## 2. Inspirations and what we take from each
 
@@ -38,29 +38,29 @@ Send villagers out from your home to wells, fields, forests and workshops. They 
 - **Turn:**
   1. **Plan.** Assign any number of villagers who are home to spaces. Payouts are previewed on the tiles.
   2. **End turn**, which resolves in this order:
-     1. All payouts and costs resolve together. Fields are harvested and watered, converters convert, fights deal damage.
-     2. Villagers who were sent this turn depart.
-     3. Villagers already out walk one step home. Anyone who arrives unlocks their space.
-     4. Growth: every free, unlocked gathering space grows (see §6).
+     1. Everyone sets out. Costs leave the store (converter input, fighting supplies). Fights deal damage immediately. What a villager gathers or makes goes into their pockets, not the store.
+     2. Irrigation pours water into the fields, using whatever water the fights left (§6).
+     3. Growth: every gathering space nobody is away from grows (see §6). A space visited this turn doesn't grow this turn.
+     4. Everyone out takes one step home. Anyone who arrives unlocks their space and unloads their pockets into the store.
      5. If the season's threat is at 0, it's stopped: the bounty is paid and the bonus threat appears. Otherwise, if nobody fought it this turn, it grows.
      6. If the bonus threat is at 0, it's stopped and its reward is paid.
-     7. The meal check, if it's a meal turn.
-     8. After turn 8: if the threat is still above 0, the run is lost. Otherwise the season-end meal happens and the market opens.
+     7. The meal check, if it's a meal turn. Goods that arrived in step 4 count.
+     8. After turn 8: if the threat is still above 0, the run is lost. Otherwise everyone comes home and unloads, the season-end meal happens and the market opens.
 - **Between seasons:** the market (§9). Everyone comes home and all spaces unlock. Piles and soaked water carry over. An unfinished bonus threat leaves.
 
 ## 5. Board
 
 - 5×5 grid with home at the center. **Travel time = Manhattan distance from home** (1–3).
-- **Random layout each run.** 8 spaces: 3 at distance 1, 3 at distance 2, 2 at distance 3.
-  - Spaces: Field ×2, Well, Forest, Bakery, Fletcher, Mine, plus one extra Field, Well or Forest.
+- **Random layout each run.** 9 spaces: 4 at distance 1 (Irrigation plus 3 others), 3 at distance 2, 2 at distance 3. Home is always fully surrounded.
+  - Spaces: Irrigation (always next to home), Field ×2, Well, Forest, Bakery, Fletcher, Mine, plus one extra Field, Well or Forest.
   - **Layout rule:** the Bakery, Fletcher, Well and Forest are never at distance 3. The only exception is an extra Well or Forest, and only if its twin is closer. The Mine is never at distance 1. *Why: the threat is final, so the layout alone must never make a run unwinnable. The layout should change the puzzle, not decide whether it can be solved.*
 - Each season the threat appears on a free cell at distance 2–3. The bonus threat takes another free cell at distance 2–3. Where a threat sits doesn't change its travel time (§7).
 
 ## 6. Spaces and the economy
 
 ```
-Well ──💧──► Field (pour) ──🌾──► Bakery (2🌾 → 1🍞) ──► meals
-  └──💧──────────────────────────► fight 🔥 Fire
+Well ──💧──► Irrigation (2💧 per field) ──► Field (+2🌾 per soaked 💧) ──🌾──► Bakery (2🌾 → 1🍞) ──► meals
+  └──💧───────────────────────────────────────────────────────────────► fight 🔥 Fire (gets its water first)
 Forest ──🪵──► Fletcher (1🪵 → 2🏹) ──► fight 👹 Monsters
 Mine ──🪙──► market
 ```
@@ -70,27 +70,33 @@ Mine ──🪙──► market
 | Well | gather | take 💧 | 2 | +1 per turn |
 | Forest | gather | take 🪵 | 2 | +1 per turn |
 | Mine | gather | take 🪙 | 1 | +1 per turn |
-| Field | gather + water | take 🌾 **and** pour up to 3💧 into the soil | 1 | **+3🌾 per turn, using 1 soaked 💧** (none when dry) |
+| Field | gather | take 🌾 | 1 | **+2🌾 per turn, using 1 soaked 💧** (none when dry) |
+| Irrigation | water | pour 2💧 into **every** field the store can cover; bring nothing home. Always 👣1 | — | — |
 | Bakery | convert | **all** wheat in store, 2🌾 → 1🍞 per batch | — | — |
 | Fletcher | convert | **all** wood in store, 1🪵 → 2🏹 per batch | — | — |
 
 - **Gather yield** = base + (distance − 1) + pile, +2 per Forager modifier. Far spaces start bigger. Harvesting resets the pile to 0.
 - **Locked spaces don't grow.** Harvesting often has a hidden cost. A watered field also waits until its villager is home before the soaked water starts turning into wheat.
-- **Fields and water.**
-  - A Field visit always harvests. By default it also pours water from the store into the soil, up to the villager's carry (3, +3 per Strong).
-  - Tapping a planned Field once switches it to "harvest only." Tapping again cancels the plan. The tile's water badge shows the soaked water, "+3" for water about to be poured, and ✕ for harvest only.
-  - Each turn the field is free and has soaked water, it turns 1💧 into +3🌾 (+1 per Fertile). A dry field doesn't grow; it only gives its base.
+- **Fields and water (v0.6).**
+  - A Field visit only harvests.
+  - Watering is its own space, **Irrigation**, always next to home and always 👣1. One visit pours 2💧 into each field, driest first, for as many fields as the store can cover. The villager brings nothing home.
+  - **Fire comes first.** Irrigation doesn't reserve water when you plan it. At the end of the turn the fights take their water, and Irrigation uses what's left. Its preview updates as you plan fights.
+  - Each turn the field is free and has soaked water, it turns 1💧 into +2🌾 (+1 per Fertile). A dry field doesn't grow; it only gives its base.
+  - The tile's water badge shows the soaked water, plus "+2" when a planned Irrigation will reach it.
   - Water is contested: the same 💧 grows food and fights fire. **Fire seasons are hungry seasons.**
-- **Converters process the whole store in one visit.** The Bakery bakes floor(wheat ÷ 2) batches; leftover odd wheat stays. Output per batch = base output + Better tools, ×2 if the villager is an Artisan.
-- **Only stock already in your store can be poured or converted.** Resources arriving this turn can't be used until next turn. This is intentional: sending everyone out can leave wheat sitting unbaked.
+  - *Why a separate space:* watering used to ride along with every harvest (with a "tap again for harvest only" toggle). Making it one visit that waters everything is clearer, and it turns watering into a real decision about a body, not a hidden default.
+- **Converters process the whole store in one visit.** The Bakery bakes floor(wheat ÷ 2) batches; leftover odd wheat stays. Output per batch = base output + Better tools, ×2 if the villager is an Artisan. The input leaves the store when the baker sets out; the bread arrives when they get home.
+- **Only stock already in your store can be poured or converted.** Goods still in someone's pockets can't be used. This is intentional: sending everyone out can leave wheat sitting unbaked, and a far harvest can arrive too late for a meal.
 - **Why converters aren't capped any more:** in v0.1 the Bakery baked at most 3 per visit and then locked. Feeding 3 villagers took about half of all actions, and players starved even while the Bakery was always busy. The only time food felt fine was with Strong, which raised that cap. An uncapped Bakery turns upkeep into accumulate-then-cash-in (pillar 5).
 
 ## 7. Villagers and travel
 
 - Send as many villagers as you like each turn. One villager per space; a threat accepts any number (until the planned damage would finish it).
-- Payout comes at the end of the turn.
-- A villager is **away** for (distance − roads − Swift) turns, minimum 1. While they're away you can't use that villager or that space.
-- **Threats are always a 1-turn trip**, wherever they sit. Fighters are back next turn, so fighting competes with gathering for *bodies*, not for walking time.
+- **👣N means the villager is usable again N turns later.** 👣1 = back next turn, 👣2 = the turn after. N = distance − roads − Swift, minimum 1. While they're away you can't use that villager or that space.
+- **Goods travel with the villager.** Whatever they gather or make lands in the store when they arrive home: from a 👣1 space it's usable next turn, from 👣2 in two turns, and so on. Far spaces start bigger, but their goods come late.
+- **Threats and Irrigation are always a 1-turn trip**, wherever they sit. Fighters are back next turn, so fighting competes with gathering for *bodies*, not for walking time. Damage lands immediately.
+- At season end everyone comes home and unloads before the season-end meal.
+- *Why (v0.6):* before, 👣1 actually meant "misses the next turn", which read wrong, and goods appeared in the store the moment a villager left. Now the badge means what it looks like, and carrying goods home makes distance cost time twice: for the villager and for the goods. It's also the game's title.
 - Pouring, converting and fighting **reserve** the input from your store when you assign them, so the preview is exactly what happens.
 - Starting crew: 3 villagers.
 
@@ -101,18 +107,18 @@ Mine ──🪙──► market
 | Threat | Fight with | Damage | Strength multiplier |
 |---|---|---|---|
 | 🔥 Fire | 💧 water | 1 per water | ×1 |
-| 👹 Monsters | 🏹 arrows | 1 per arrow | **×1.5** |
+| 👹 Monsters | 🏹 arrows | 1 per arrow | **×2** |
 
-- Strength in season *s* = **(4 + 4(s − 1)) × multiplier**: fire 4, 8, 12 … 32; monsters 6, 12, 18 … 48.
-- *Why monsters are tougher:* with the Fletcher making 2 arrows per wood and an uncapped visit, arrows are cheap, while water is split between fields and firefighting. At equal strength, monster seasons failed about a fifth as often as fire seasons; ×1.5 evens them out.
+- Strength in season *s* = **(5 + 6.5(s − 1)) × multiplier**, rounded: fire 5, 12, 18, 25, 31, 38, 44, 51; monsters 10, 23, 36, 49, 62, 75, 88, 101.
+- *Why monsters are tougher:* with the Fletcher making 2 arrows per wood and an uncapped visit, arrows are cheap, while water is split between fields and firefighting. At equal strength, monster seasons failed about a fifth as often as fire seasons. With faster villagers in v0.6 the gap grew, so monsters went from ×1.5 to ×2.
 - It grows by **1 + floor((s − 1)/2)** on any turn nobody fights it: +1 in seasons 1–2, +2 in 3–4, +3 in 5–6, +4 in 7–8.
-- Each villager delivers up to their carry (3, +3 per Strong). Brave adds +2 damage, even with nothing to deliver.
+- Each villager delivers up to their carry (3, +3 per Strong). Brave adds +2 damage, even with nothing to deliver. Bigger threats mean you send several fighters at once.
 - **Not stopped by end of turn 8: the run is over.** This is final; see pillar 4.
 - **Bounty** for stopping it = 3 + season + unused turns, paid the turn it's stopped.
 
 **Bonus threat (optional)**
 - Appears as soon as the season's threat is stopped (unless that happened on turn 8). It's the other type: stopping fire summons a bonus monster band, and vice versa. Chasing it usually means setting up a supply chain you haven't been using this season.
-- Same strength formula as the season's threat (with its multiplier). It never grows and ignoring it costs nothing. It leaves at season end.
+- **Half** the season's starting strength (with its multiplier): fire 3, 6, 9 … 25; monsters 5, 12, 18 … 51. It never grows and ignoring it costs nothing. It leaves at season end.
 - Reward for stopping it by the end of turn 8: 3 + season 🪙.
 - The point: early victory buys free turns, and the player chooses between safe farming (bread for the meals ahead) and a second payday.
 
@@ -120,7 +126,7 @@ Mine ──🪙──► market
 - Meals after turns 3 and 6, and at season end (after turn 8). `CFG.mealTurns` sets the mid-season ones.
 - Each villager eats 1🍞, **+1 for every modifier past their first**, −1 per Hearty (minimum 0).
 - Each missing bread costs 1 ❤. You start with 5 ❤ (max 5). **At 0 ❤ the run is over.**
-- Feeding 3 villagers takes 9🍞 a season, which is 18🌾 and about 6💧 poured into fields.
+- Feeding 3 villagers takes 9🍞 a season, which is 18🌾: about 9 soaked 💧, or 2–3 Irrigation visits for two fields.
 
 **Starting state:** store 2🌾 4🍞 4💧 1🪵 0🏹 2🪙. Each Field starts with a pile of 2 and 2 soaked water.
 
@@ -134,7 +140,7 @@ Mine ──🪙──► market
 |---|---|---|
 | New villager | 7, +4 each time | +1 worker (eats at every meal) |
 | Swift 👟 | 5 | Travel −1 (minimum 1) |
-| Strong 💪 | 4 | +3 carry when watering or fighting |
+| Strong 💪 | 4 | +3 carry when fighting |
 | Forager 🧺 | 5 | +2 when gathering |
 | Artisan 🔨 | 5 | Double output at the Bakery or Fletcher |
 | Golden ✨ | 6 | +1🪙 every time they act |
@@ -155,19 +161,28 @@ Mine ──🪙──► market
 
 **Targets for the bot:** about 90% clear season 1; about 10–15% win the full run; fire and monsters fail at about the same rate per season faced; hunger and threats both matter.
 
-**v0.5 tuned values** (4000 runs):
+**v0.6 tuned values** (4000 runs):
 
 | Metric | Result |
 |---|---|
-| Clears season 1 | 90% |
-| Wins the full run | 11% |
+| Clears season 1 | 92% |
+| Wins the full run | 12% |
 | Average seasons cleared | 3.7 |
-| Runs lost to hunger | 43% |
-| Fail rate per fire season | 10.6% |
-| Fail rate per monster season | 9.9% |
-| Losses with the threat at ≤2 strength ("near misses") | 5% of runs |
+| Runs lost to hunger | 29% |
+| Runs lost to fire / monsters | 29% / 29% |
+| Fail rate per fire season | 13.1% |
+| Fail rate per monster season | 12.6% |
+| Losses with the threat at ≤2 strength ("near misses") | 9% of runs |
+| Bonus threats stopped per run | 0.08 |
 
-**What the sweeps found**
+**What the v0.6 sweep found**
+- 👣1 = next turn, plus goods carried home, plus the Irrigation space, on the v0.5 numbers: the bot won 62% and monster seasons almost never failed (0.3%). Faster villagers outweigh goods arriving later.
+- The 216-combination sweep (threat start and step, growth, monster multiplier, meal schedule, field growth) favoured steeper threats (5 + 6.5 per season), monsters ×2, and fields at +2🌾 per soaked 💧 instead of +3. Meals after 3 and 6 beat 2/4/6, which pushed hunger above 40%.
+- Steps of 6 and 7 per season bracketed the target (16% and 9% wins); 6.5 lands at 12%.
+- The bonus threat at full strength was never stopped by the bot. At half strength it's stopped occasionally (0.08 per run) with no effect on the win rate, so it's a temptation rather than a wall.
+- Losses are now split almost evenly between fire, monsters and hunger.
+
+**What the v0.5 sweeps found**
 - **Seasons that always last 8 turns** made the game much easier: free turns after an early clear are worth far more than the bounty. With 1-turn threats on top, the old bot won about 61%. A third meal (turns 3 and 6) was the strongest single lever to bring pressure back.
 - **The new economy needed a smarter bot.** The v0.1 bot ignored watering and sat on 19 wheat without baking. `tools/bot.js` now waters fields, bakes in bulk, fletches when arrows run short and fights early; it clears season 1 about 98% of the time on the pre-tune numbers.
 - **Fire vs monsters:** with cheap arrows, monster seasons failed about 2% of the time against 15% for fire. A ×1.5 strength multiplier for monsters lands them at parity.
@@ -177,12 +192,13 @@ Mine ──🪙──► market
 
 ## 11. Known issues and open questions
 
-- **Hunger is the bot's biggest loss** (43% of runs). The bot is naive about food, so playtest whether humans feel the same. The levers are starting bread, the meal schedule (`CFG.mealTurns`) and `fieldGrow`.
-- **Bonus threat value:** is 3 + season coins worth chasing at full season strength? If players never take it, try lower strength (×0.75) or a non-coin reward (a free modifier, +1 ❤).
+- **Big threat numbers:** monsters reach 101 in season 8. The whole-store Fletcher makes that reachable, but check that late seasons don't feel like arithmetic. An alternative is fewer, bigger arrows (e.g. 1 wood → 1 arrow worth 2).
+- **Carried goods visibility:** walkers show what they carry on their tile, and store chips show "+N" (arrives this turn) and "+N⏳" (later). Playtest whether players plan around arrival times or get surprised at meals.
+- **Bonus threat value:** now half strength for 3 + season coins. If players never take it, try a non-coin reward (a free modifier, +1 ❤).
 - **Near misses** end about 5% of bot runs. The threat stays final, so the fix has to come from information. Recommended next: the threat card shows the damage you have in stock (and arriving) against its strength, plus a warning when the math no longer works. That way a shortfall shows up on turn 5, not turn 8.
 - **Dead turns:** when everyone is away, the only move is pressing End turn. Options: a home action that needs no villager, or skipping ahead to the next return automatically.
 - **Wood has only one use** (arrows), while water has two. Should wood also build something (roads, a granary) so monster seasons have their own squeeze?
-- **The watering UI** (tap again for harvest only) needs a playtest on a phone. Is it discoverable?
+- **Irrigation choice:** it always waters the driest fields first. Should players be able to pick which fields?
 - **Solved routes:** the layout is fixed within a run. Consider shuffling a space each season, or events.
 - **Reservation quirk:** unassigning an earlier plan doesn't recalculate what later plans reserved.
 - **Threats are passive:** should fire spread to a neighbouring space? Should monsters steal from piles?
@@ -207,8 +223,10 @@ Mine ──🪙──► market
 | 2🌾 → 1🍞, 1🪵 → 2🏹, fields need water | Adopted (v0.2 economy) | Designer's economy: water feeds wheat and competes with firefighting |
 | Seasons always last 8 turns; early clear pays at once | Adopted (v0.3) | Winning early must never starve you; free turns are the reward |
 | Optional bonus threat after an early clear | Adopted (v0.3) | Gives the free turns a goal without adding failure |
-| Threats are a 1-turn trip | Adopted (v0.4) | Designer's call: fighting costs bodies, not walking time |
-| Monsters ×1.5 strength | Adopted (v0.5) | Cheap arrows made monster seasons much easier than fire |
+| Threats are a 1-turn trip | Adopted (v0.4) | Designer's call: fighting costs bodies, not walking time. Since v0.6 that truly means back next turn |
+| Monsters ×1.5 strength (×2 in v0.6) | Adopted (v0.5) | Cheap arrows made monster seasons much easier than fire |
+| 👣N = usable again in N turns; goods arrive with the villager | Adopted (v0.6) | Badge means what it says; carrying home makes distance cost time twice |
+| Watering is its own space (Irrigation), fire takes water first | Adopted (v0.6) | One clear decision instead of a hidden default on every harvest |
 | Modifiers stack | Adopted (v0.1) | Sandbox; appetite is the brake |
 
 ## 14. Tech
@@ -217,11 +235,18 @@ Mine ──🪙──► market
 - `src/logic.js` holds the rules and state and has no DOM. `src/ui.js` handles rendering and input. `tools/build.js` inlines both into `index.html`, along with the art and sound as base64, so the page still opens from `file://`.
 - Saved state carries a version (`S.v`, `STATE_V` in `logic.js`). The UI discards state from an older version instead of crashing.
 - **Look and feel:** pixel-art harvest farm built from Kenney's CC0 Tiny Farm, Tiny Town and Tiny Dungeon sheets (`assets/`, see `assets/CREDITS.md`), scaled by whole numbers so pixels stay crisp. Parchment panels, wooden buttons, a wheat-field backdrop, Jersey 15 pixel font. Emoji only for small icons (modifiers, fire, footsteps).
-- **End-of-turn replay:** `endTurn()` returns an ordered event list (`report.events`). The UI plays it back one beat at a time so the player can follow it: each villager walks out and pops their payout ("+3 🪵"), the icon flies into the store, then each walking villager's timer ticks down (or they walk home), fields and piles grow, the threat grows or is stopped, the bonus appears, then the meal. Every beat plays a Kenney sound pitched one step higher on a major pentatonic scale, so a big turn builds up. Tapping during the replay speeds it up. A mute toggle sits in the top bar.
+- **End-of-turn replay:** `endTurn()` returns an ordered event list (`report.events`). The UI plays it back one beat at a time so the player can follow it: each villager walks out and pops their payout ("+3 🪵"), the icon flies into the store, then Irrigation sends water to each field, fields and piles grow, each walking villager's timer ticks down or they walk home and their goods fly into the store, the threat grows or is stopped, the bonus appears, then the meal. Every beat plays a Kenney sound pitched one step higher on a major pentatonic scale, so a big turn builds up. Tapping during the replay speeds it up. A mute toggle sits in the top bar.
 - If the loop proves fun, consider porting to Unity. Keeping the rules DOM-free makes that port mostly a translation job.
 
 ## Changelog
 
+- **v0.6 (2026-11-12):** travel, carrying and watering.
+  - 👣N now means the villager is usable again N turns later (👣1 = next turn). Previously 👣1 meant missing the next turn.
+  - Goods are carried home and reach the store when the villager arrives. Converter input leaves the store at departure; output arrives on return. Fight damage is immediate. Everyone unloads before the season-end meal.
+  - New space: Irrigation, always next to home and 👣1. Pours 2💧 into each field (driest first) as far as the store allows; fights take their water first. Field visits only harvest; the "harvest only" toggle is gone.
+  - Strong now only adds fighting carry.
+  - Retuned: threats 5 + 6.5 per season (rounded), monsters ×2, fields +2🌾 per soaked 💧, bonus threat at half strength. Bot: season 1 92%, wins 12%.
+  - Store chips show goods arriving this turn (+N) and later (+N⏳). Walkers show what they carry. The End turn summary marks goods that arrive later with ⏳.
 - **v0.5 (2026-11-12):** brought in the designer's new economy (their doc called it v0.2):
   - Bakery and Fletcher convert the whole store in one visit, at 2🌾→1🍞 and 1🪵→2🏹. Better tools adds +1 output per batch.
   - Fields grow only from soaked water: a visit harvests and pours up to carry 💧 (tap again for harvest only), and each free turn turns 1💧 into +3🌾. Dry fields only give their base of 1. Fields start with a pile of 2 and 2 soaked water.

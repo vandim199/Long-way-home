@@ -15,10 +15,10 @@ function botPlan() {
     const hpLeft = threatLive ? T.hp - G.plannedDmg('T') : 0;
     const need = G.totalAppetite();
     const foodNeed = need * (S.turn + 1 >= G.nextMeal() ? 1 : 0) + need * (mealsLeft(S) - 1) * 0.6;
-    const bread = S.res.bread + G.incoming('bread');
-    const bakeable = Math.floor(G.avail('wheat') / 2) + Math.floor(G.incoming('wheat') / 2);
+    const bread = S.res.bread + G.onRoad('bread') + G.incoming('bread');
+    const bakeable = Math.floor((G.avail('wheat') + G.onRoad('wheat') + G.incoming('wheat')) / 2);
     const breadShort = bread + bakeable < foodNeed + need;
-    const fightStock = G.avail(tr) + G.incoming(tr) + (tr === 'arrows' ? 2 * (G.avail('wood') + G.incoming('wood')) : 0);
+    const fightStock = G.avail(tr) + G.onRoad(tr) + G.incoming(tr) + (tr === 'arrows' ? 2 * (G.avail('wood') + G.onRoad('wood') + G.incoming('wood')) : 0);
     const fightShort = threatLive && fightStock < hpLeft + T.growth;
     const opts = [];
 
@@ -38,12 +38,15 @@ function botPlan() {
       if (!p.ok) continue;
       const amt = p.gain[ty.res || ty.to] || 0;
       let sc = 0;
-      if (sp.type === 'field') {
-        // harvest a big pile, or start a dry field soaking
-        sc = (breadShort ? 50 : 30) + 2 * Math.min(amt, 8) + (sp.soak === 0 && p.pour ? 15 : 0);
+      if (sp.type === 'field') sc = (breadShort ? 50 : 30) + 2 * Math.min(amt, 10);
+      else if (sp.type === 'irrigation') {
+        // keep the fields soaking, unless the fire needs every drop
+        const minSoak = Math.min(...G.fields().map(f => f.soak));
+        const spare = tr === 'water' && threatLive ? G.avail('water') - hpLeft : G.avail('water');
+        sc = spare >= G.CFG.irrigatePer ? (minSoak <= 1 ? 70 : minSoak <= 3 ? 40 : 10) : 0;
       } else if (sp.type === 'bakery') sc = breadShort ? 95 : 45 + 4 * amt;
       else if (sp.type === 'fletcher') sc = tr === 'arrows' && threatLive ? (G.avail('arrows') + G.incoming('arrows') < hpLeft ? 92 : 40) + amt : 5;
-      else if (ty.res === 'water') sc = (tr === 'water' && fightShort ? 75 : 35) + amt;
+      else if (ty.res === 'water') sc = (tr === 'water' && fightShort ? 75 : G.avail('water') < 4 ? 45 : 25) + amt;
       else if (ty.res === 'wood') sc = (tr === 'arrows' && fightShort ? 75 : 10) + amt;
       else if (ty.res === 'coins') sc = 25 + amt * 2;
       sc -= p.travel * 3;
@@ -52,11 +55,8 @@ function botPlan() {
     opts.sort((a, b) => b.score - a.score);
     let done = false;
     for (const o of opts) {
-      if (!G.assign(w.id, o.id).ok) continue;
+      if (o.score <= 0 || !G.assign(w.id, o.id).ok) continue;
       done = true;
-      // keep water for the fire when watering would leave us short
-      const sp = G.target(o.id);
-      if (sp && sp.type === 'field' && tr === 'water' && threatLive && G.avail('water') < hpLeft) G.toggleDry(w.id);
       break;
     }
     if (!done) break;

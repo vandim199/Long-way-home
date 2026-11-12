@@ -31,6 +31,7 @@ const SPACE_ART = {
   forest: h => [...grass(h), ['T4', 0, 0], ['T16', 0, 1], ['T3', 1, -0.1], ['T15', 1, 0.9], ['T28', 0.5, 0.95]],
   mine: h => [...grass(h), ['F89', 0.1, 0.15], ['F77', 1, 0.3], ['T115', 0.45, 1], ['T93', 1.1, 1]],
   bakery: () => [...grass(0), ...cottage('red'), ['F74', 0, 1.05]],
+  irrigation: h => [...grass(h), ['T131', 0.5, 0], ['F110', 0, 0.85], ['F111', 1, 0.85]],
   fletcher: h => [...grass(h), ['T95', 0.1, 0.1], ['T106', 1, 0.25], ['T118', 0.15, 1], ['T119', 1, 1]],
 };
 // empty meadow cells: mostly bare grass, sometimes a bit of life (never wheat, so Fields stay readable)
@@ -207,25 +208,28 @@ function renderHud() {
   }
 
   const need = totalAppetite();
-  const have = S.res.bread, inc = incoming('bread'), out = S.plans.reduce((a, p) => a + (p.cost.bread || 0), 0);
-  const proj = have + inc - out;
   const nm = nextMeal();
+  const proj = avail('bread') + arriving('bread', nm - S.turn + 1);
   const when = nm === S.turn ? 'after this turn' : nm === CFG.turns ? `at season end (turn ${CFG.turns})` : `after turn ${nm}`;
   const short = proj < need;
   $('#meal').className = 'card panel meal' + (short ? ' short' : '');
   $('#meal').innerHTML = `
     <div class="card-head"><span class="big-ico">${sp('F123', 2)}</span><span class="card-title">Meal</span><span class="hp">${need}${ico('bread')}</span></div>
     <div class="card-line strong">${when}</div>
-    <div class="card-line">${short ? `Short by ${need - proj}. Each missing ${ico('bread')} costs a heart.` : `Covered: ${proj} bread after this turn.`}</div>`;
+    <div class="card-line">${short ? `Short by ${need - proj}. Each missing ${ico('bread')} costs a heart.` : `Covered: ${proj} bread by then.`}</div>`;
 }
 
 function renderRes() {
   $('#res').innerHTML = RES.map(r => {
-    const inc = incoming(r), out = S.res[r] - avail(r);
+    const out = S.res[r] - avail(r) + (r === 'water' ? irrigationUse() : 0);
+    const now = arriving(r, 1), later = onRoad(r) + incoming(r) - now;
     return `<div class="chip panel" data-r="${r}" title="${r}">${ico(r, 2)}<span class="rv">${S.res[r]}</span>
-      <span class="delta">${out ? `<span class="rout">−${out}</span>` : ''}${inc ? `<span class="rin">+${inc}</span>` : ''}</span></div>`;
+      <span class="delta">${out ? `<span class="rout">−${out}</span>` : ''}${now ? `<span class="rin" title="arrives this turn">+${now}</span>` : ''}${later ? `<span class="rtr" title="still on the road">+${later}⏳</span>` : ''}</span></div>`;
   }).join('');
 }
+
+// water a planned Irrigation visit will pour (fights take theirs first)
+const irrigationUse = () => (S.plans.some(p => p.tid === 'irr') ? irrigationPlan().use : 0);
 
 function gainHTML(p, type = S.threat.type) {
   const parts = [];
@@ -279,6 +283,7 @@ function tileHTML(x, y) {
     body = art(SPACE_ART[spc.type](h));
     let mid;
     if (ty.kind === 'gather') mid = `<span>${gatherAmt(spc, sel || null)}</span>${ico(ty.res)}`;
+    else if (ty.kind === 'irrigate') { const ip = irrigationPlan(); mid = ip.use ? `<span>−${ip.use}</span>${ico('water')}<em>▸</em><span>${ip.fields.length}</span>${ico('wheat')}` : `<small>need ${CFG.irrigatePer}</small>${ico('water')}`; label += `: pours ${CFG.irrigatePer} water into each field`; }
     else mid = `<span>${ty.in}</span>${ico(ty.from)}<em>▸</em><span>${batchOut(spc, sel || null)}</span>${ico(ty.to)}`;
     if (ty.waters) label += spc.soak ? `, ${spc.soak} water soaked (+${growth(spc)} wheat per turn)` : ', dry';
     const extras = (spc.fert ? '🌱' : '') + (spc.road ? '🛤️' : '') + (spc.tools ? '⚒️' : '');
@@ -287,14 +292,16 @@ function tileHTML(x, y) {
       cls += ' locked';
       label += `, ${w.name} back in ${w.away}`;
       body += `<span class="walker" style="--wc:${w.color}">${vsp(w)}<span class="ring"></span></span><span class="bubble">${w.away}</span>`;
+      const load = Object.keys(w.carry).filter(r => w.carry[r]);
+      if (load.length) body += `<span class="pill carry">${load.map(r => `+${w.carry[r]}${ico(r)}`).join(' ')}</span>`;
     } else {
       const p = plans[0];
-      const pv = p ? gainHTML(p) : mid;
+      const pv = p ? (ty.kind === 'irrigate' ? mid : gainHTML(p)) : mid;
       body += `<span class="pill">${pv}</span><span class="trav">👣${travel}</span>${extras ? `<span class="ext">${extras}</span>` : ''}`;
     }
     if (ty.waters) {
-      const pour = !spc.lockedBy && plans[0] && plans[0].pour;
-      body += `<span class="soak ${spc.soak || pour ? '' : 'dry'}" title="Soaked water">${ico('water')}<b>${spc.soak}</b>${pour ? `<i class="pour">+${pour}</i>` : ''}${!spc.lockedBy && plans[0] && plans[0].dry ? '<i class="hold" title="Harvest only">✕</i>' : ''}</span>`;
+      const pour = irrigationUse() && irrigationPlan().fields.includes(spc.id) ? CFG.irrigatePer : 0;
+      body += `<span class="soak ${spc.soak || pour ? '' : 'dry'}" title="Soaked water">${ico('water')}<b>${spc.soak}</b>${pour ? `<i class="pour">+${pour}</i>` : ''}</span>`;
     }
   }
   if (plans.length) {
@@ -324,8 +331,8 @@ function renderCrew() {
   $('#crew').innerHTML = S.workers.map(w => {
     const p = planOf(w.id);
     let st, cls = 'worker panel';
-    if (w.away > 0) { st = `Walking home · ${w.away}`; cls += ' away'; }
-    else if (p) { const t = target(p.tid); st = `→ ${t.isThreat ? THREATS[t.type].name : TYPES[t.type].name}${p.dry ? ' (harvest only)' : ''}`; cls += ' planned'; }
+    if (w.away > 0) { const load = Object.keys(w.carry).filter(r => w.carry[r]); st = `Walking home · ${w.away}${load.length ? ' · ' + load.map(r => `+${w.carry[r]}${ICON[r]}`).join(' ') : ''}`; cls += ' away'; }
+    else if (p) { const t = target(p.tid); st = `→ ${t.isThreat ? THREATS[t.type].name : TYPES[t.type].name}`; cls += ' planned'; }
     else st = S.selected === w.id ? 'Ready' : 'Home';
     if (S.selected === w.id && S.phase === 'play' && !anim) cls += ' sel';
     if (S.phase === 'target' && validTarget(S.pending.id, w)) cls += ' targetable';
@@ -345,9 +352,11 @@ function renderFoot() {
   else if (!planned && !free) btn.innerHTML = `Wait <small>everyone is away</small>`;
   else {
     // this turn's payout at a glance: "+5 coins +3 wheat −3 fire"
-    const gains = {};
-    for (const p of S.plans) for (const r in p.gain) gains[r] = (gains[r] || 0) + p.gain[r];
-    const parts = [...RES, 'coins'].filter(r => gains[r]).map(r => `<span>+${gains[r]}${ico(r)}</span>`);
+    const gains = {}, late = {};
+    for (const p of S.plans) for (const r in p.gain) { gains[r] = (gains[r] || 0) + p.gain[r]; if (p.travel > 1) late[r] = true; }
+    const parts = [...RES, 'coins'].filter(r => gains[r]).map(r => `<span${late[r] ? ' title="some arrive later"' : ''}>+${gains[r]}${ico(r)}${late[r] ? '<small>⏳</small>' : ''}</span>`);
+    const iw = irrigationUse();
+    if (iw) parts.push(`<span class="water">${ico('water')}▸${irrigationPlan().fields.length}${ico('wheat')}</span>`);
     for (const th of threats()) { const d = plannedDmg(th.id); if (d) parts.push(`<span class="dmg">−${d}${threatIco(th.type)}</span>`); }
     const esum = parts.length ? parts.join('') : '<span class="none">nobody sent</span>';
     btn.innerHTML = `End turn<span class="esum">${esum}</span>${planned && free ? `<small>${free} still home</small>` : ''}`;
@@ -396,13 +405,13 @@ function renderOverlay() {
     ov.innerHTML = `<div class="sheet panel help">
       <h2>How to play</h2>
       <ul class="rules">
-        <li><b>Send villagers.</b> Tap a villager, then a space. Send as many as you like, then press <b>End turn</b>. Everything pays out at the end of the turn.</li>
-        <li><b>The long way home.</b> 👣 is how many turns the villager stays away. Until they're back, you can't use that villager <i>or</i> that space.</li>
+        <li><b>Send villagers.</b> Tap a villager, then a space. Send as many as you like, then press <b>End turn</b>. Everything happens at the end of the turn.</li>
+        <li><b>The long way home.</b> 👣 is when the villager can go out again: 👣1 means next turn, 👣2 the turn after. What they gather arrives in your store when they get home, not before. Until they're back, you can't use that villager <i>or</i> that space.</li>
         <li><b>Piles grow.</b> Wells, Forests and the Mine grow +1 every turn nobody is using them. Far spaces start bigger.</li>
-        <li><b>Water your fields.</b> A Field visit harvests the wheat and pours up to ${CFG.carry} ${ico('water')} into the soil. Each free turn, the field turns 1 soaked ${ico('water')} into +${CFG.fieldGrow} ${ico('wheat')}. A dry field doesn't grow. Tap a planned Field again for <i>harvest only</i> (keep your water), and once more to cancel.</li>
-        <li><b>Bake and fletch everything at once.</b> The Bakery turns all your wheat into bread (2 ${ico('wheat')} → 1 ${ico('bread')}); the Fletcher turns all your wood into arrows (1 ${ico('wood')} → 2 ${ico('arrows')}). They only use what's already in your store, not what's arriving this turn.</li>
+        <li><b>Water your fields.</b> Fields grow only from soaked water: each free turn a field turns 1 soaked ${ico('water')} into +${CFG.fieldGrow} ${ico('wheat')}, and a dry field doesn't grow. Send someone to <b>Irrigation</b> (always 👣1) to pour ${CFG.irrigatePer} ${ico('water')} into every field you can afford. Firefighters get their water first; Irrigation uses what's left.</li>
+        <li><b>Bake and fletch everything at once.</b> The Bakery turns all your wheat into bread (2 ${ico('wheat')} → 1 ${ico('bread')}); the Fletcher turns all your wood into arrows (1 ${ico('wood')} → 2 ${ico('arrows')}). They only use what's already in your store, and their output arrives when the villager gets home.</li>
         <li><b>Meals.</b> After turn ${CFG.mealTurns.join(', ')} and at season end, each villager eats ${ico('bread')}. Each missing bread costs a heart. At 0 hearts the run ends.</li>
-        <li><b>The threat.</b> Fight it by sending villagers with ${ico('water')} (fire) or ${ico('arrows')} (monsters). Water is also what grows your wheat, so fire seasons are hungry seasons. Each carries ${CFG.carry}. Any number can go at once, and fighters are always back next turn (👣1). It grows on turns you don't fight it. Stop it by turn ${CFG.turns} or the run ends. The season always lasts ${CFG.turns} turns, so stopping it early leaves free turns to farm.</li>
+        <li><b>The threat.</b> Fight it by sending villagers with ${ico('water')} (fire) or ${ico('arrows')} (monsters). Water is also what grows your wheat, so fire seasons are hungry seasons. Each carries ${CFG.carry}. Any number can go at once, and fighters are always back next turn (👣1). Damage lands right away. It grows on turns you don't fight it. Stop it by turn ${CFG.turns} or the run ends. The season always lasts ${CFG.turns} turns, so stopping it early leaves free turns to farm.</li>
         <li><b>Bonus threat.</b> Once the season's threat is stopped, a <span class="star">★</span> bonus threat of the other kind appears. It's optional: it never grows and ignoring it costs nothing, but stopping it pays extra ${ico('coins')}.</li>
         <li><b>Market.</b> After turn ${CFG.turns}. Stopping the threat early pays a bigger bounty. Spend coins between seasons on villagers, modifiers and space upgrades.</li>
       </ul>
@@ -415,7 +424,7 @@ function renderOverlay() {
 }
 
 // ---------- turn replay ----------
-const STEP = { spawn: 900, act: 430, step: 330, home: 380, pile: 170, tgrow: 520, clear: 950, meal: 750, recall: 600, bounty: 800, overrun: 700 };
+const STEP = { water: 360, spawn: 900, act: 430, step: 330, home: 380, pile: 170, tgrow: 520, clear: 950, meal: 750, recall: 600, bounty: 800, overrun: 700 };
 const pace = n => Math.max(0.55, 1 - n * 0.035);
 
 async function playTurn() {
@@ -436,11 +445,26 @@ async function playTurn() {
   render();
 }
 
+// a villager just got home: each kind of goods flies from the house into the store, one clink at a time
+async function unload(goods, w) {
+  const rs = Object.keys(goods || {}).filter(r => goods[r]);
+  if (!rs.length) { pop(homeCell(), `${esc(w.name)} is home!`, 'info', 16); return; }
+  for (const r of rs) {
+    const n = anim ? anim.combo : 0;
+    pop(homeCell(), `+${goods[r]}${ico(r, 2)}`, '', Math.min(40, 24 + n * 2));
+    await fly(homeCell(), chipOf(r), ico(r, 2), 360);
+    S.res[r] += goods[r];
+    if (anim) { renderRes(); renderTop(); renderHud(); }
+    bump(chipOf(r));
+    riser('clink', 0, 0.9);
+    await wait(120);
+  }
+}
+
 async function playEvent(ev) {
   if (ev.k === 'act') {
     const w = W(ev.wid), t = target(ev.tid);
     S.plans = S.plans.filter(p => p.wid !== ev.wid);
-    if (ev.pour && !t.isThreat) t.soak = ev.soak;
     for (const r in ev.cost) S.res[r] -= ev.cost[r];
     renderRes(); renderHud(); renderBoard();
     await fly(homeCell(), cellOf(t), vsp(w), 300);
@@ -461,17 +485,11 @@ async function playEvent(ev) {
     const gains = Object.keys(ev.gain);
     if (gains.length) {
       if (!ev.dmg) riser('clink', 0, 0.9);
-      const costTxt = ev.pour ? `<span class="sub water">+${ev.pour}${ico('water')} soaked</span>` : Object.keys(ev.cost).filter(() => !ev.dmg).map(r => `<span class="sub">−${ev.cost[r]}${ico(r)}</span>`).join('');
+      const costTxt = Object.keys(ev.cost).filter(() => !ev.dmg).map(r => `<span class="sub">−${ev.cost[r]}${ico(r)}</span>`).join('');
+      // the villager pockets it; it reaches the store when they get home
+      for (const r of gains) w.carry[r] = (w.carry[r] || 0) + ev.gain[r];
       pop(cell, gains.map(r => `+${ev.gain[r]}${ico(r, 2)}`).join(' ') + costTxt, '', size);
-      for (const r of gains) {
-        fly(cell, chipOf(r), ico(r, 2), 420).then(() => {
-          S.res[r] += ev.gain[r];
-          if (anim) { renderRes(); renderTop(); renderHud(); }
-          const c = chipOf(r);
-          bump(c);
-          sfx('clink', 7 + semis(Math.min(anim ? anim.combo : 0, 10)), 0.35);
-        });
-      }
+      renderBoard(); renderRes(); renderCrew();
     }
     await wait(STEP.act * pace(n));
     return;
@@ -483,13 +501,13 @@ async function playEvent(ev) {
     if (ev.away === 0) {
       if (t && !t.isThreat && t.lockedBy === w.id) t.lockedBy = null;
       w.at = null;
+      w.carry = {};
       renderBoard(); renderCrew();
       const n = riser('step', -3, 0.8);
-      pop(cellOf(t), `${sp('T17', 1)}free`, 'info', 15);
       await fly(cellOf(t), homeCell(), vsp(w), 380);
       bump(homeCell(), 'flash');
       riser('home', 0, 0.9);
-      pop(homeCell(), `${esc(w.name)} is home!`, 'info', 16);
+      await unload(ev.deliver, w);
       await wait(STEP.home * pace(n));
     } else {
       renderBoard(); renderCrew();
@@ -499,6 +517,29 @@ async function playEvent(ev) {
       pop(c, `−1 ⏳`, 'info', 18);
       await wait(STEP.step * pace(n));
     }
+    return;
+  }
+  if (ev.k === 'water') {
+    const w = W(ev.wid), t = target(ev.tid);
+    S.plans = S.plans.filter(p => p.wid !== ev.wid);
+    renderBoard(); renderRes();
+    await fly(homeCell(), cellOf(t), vsp(w), 300);
+    w.away = 1; w.at = ev.tid; t.lockedBy = w.id;
+    S.res.water -= ev.used;
+    renderBoard(); renderRes(); renderCrew();
+    bump(cellOf(t), 'flash');
+    if (ev.used) { pop(chipOf('water'), `−${ev.used}${ico('water', 2)}`, 'bad', 22); bump(chipOf('water')); }
+    else pop(cellOf(t), 'No water left', 'info', 16);
+    for (const fd of ev.fields) {
+      const f = target(fd.tid);
+      await fly(cellOf(t), cellOf(f), ico('water', 2), 280);
+      f.soak = fd.soak;
+      renderBoard();
+      riser('pluck', 2, 0.8);
+      pop(cellOf(f), `+${CFG.irrigatePer}${ico('water', 2)}`, 'info', 22);
+      bump(cellOf(f).querySelector('.soak'));
+    }
+    await wait(STEP.water);
     return;
   }
   if (ev.k === 'pile') {
@@ -575,12 +616,13 @@ async function playEvent(ev) {
   if (ev.k === 'recall') {
     const out = S.workers.filter(w => w.away > 0 || planOf(w.id));
     const flights = out.map(w => { const t = w.at ? (target(w.at) || S.threat) : null; return t ? fly(cellOf(t), homeCell(), vsp(w), 450) : null; });
-    for (const w of S.workers) { w.away = 0; w.at = null; }
+    for (const w of S.workers) { w.away = 0; w.at = null; w.carry = {}; }
     for (const s of S.spaces) s.lockedBy = null;
     S.plans = [];
     renderBoard(); renderCrew();
     await Promise.all(flights);
     if (out.length) { riser('home', 0, 0.9); bump(homeCell(), 'flash'); }
+    for (const d of ev.deliveries || []) await unload(d.gain, W(d.wid));
     await wait(STEP.recall * 0.5);
     return;
   }
@@ -648,12 +690,6 @@ function onClick(e) {
   }
   if (act === 'tile') {
     const plansHere = S.plans.filter(p => p.tid === id);
-    const tt = target(id);
-    if (plansHere.length && tt && !tt.isThreat && TYPES[tt.type].waters && !plansHere[0].dry) {
-      const r = toggleDry(plansHere[0].wid);
-      if (r.ok) { toast('Harvest only: no watering. Tap again to cancel.'); sfx('select', 3, 0.7); }
-      return render();
-    }
     const sel = S.selected && W(S.selected);
     if (!sel || !isFree(sel)) {
       if (plansHere.length) { unassign(plansHere[plansHere.length - 1].wid); sfx('select', -4, 0.7); return render(); }

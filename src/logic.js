@@ -1,5 +1,5 @@
 // ===== Long Way Home — game logic (no DOM) =====
-const STATE_V = 5; // bump when the shape of S changes; the UI discards older saved state
+const STATE_V = 6; // bump when the shape of S changes; the UI discards older saved state
 
 const CFG = {
   seasons: 8,
@@ -10,11 +10,12 @@ const CFG = {
   carry: 3,
   start: { wheat: 2, bread: 4, water: 4, wood: 1, arrows: 0, coins: 2 },
   fieldStart: { pile: 2, soak: 2 }, // each Field starts with some wheat and soaked water
-  fieldGrow: 3,                     // wheat per soaked water, each free turn
-  threatHp: s => 4 + 4 * (s - 1),          // × the threat's hpMul
+  fieldGrow: 2,                     // wheat per soaked water, each free turn
+  irrigatePer: 2,                   // water an Irrigation visit pours into each field
+  threatHp: s => 5 + 6.5 * (s - 1),        // × the threat's hpMul, then rounded
   threatGrowth: s => 1 + Math.floor((s - 1) / 2),
   bounty: (s, unused) => 3 + s + unused,   // paid the moment the season's threat is stopped
-  bonusHp: s => 4 + 4 * (s - 1),           // optional bonus threat that appears once the main one is stopped
+  bonusHp: s => 0.5 * (5 + 6.5 * (s - 1)),  // optional bonus threat (half strength) that appears once the main one is stopped
   bonusBounty: s => 3 + s,
 };
 
@@ -22,10 +23,12 @@ const RES = ['wheat', 'bread', 'water', 'wood', 'arrows'];
 const ICON = { wheat: '🌾', bread: '🍞', water: '💧', wood: '🪵', arrows: '🏹', coins: '🪙' };
 
 const TYPES = {
-  field:    { name: 'Field',    icon: '🌾', kind: 'gather',  res: 'wheat',  base: 1, waters: true },
+  field:    { name: 'Field',    icon: '🌾', kind: 'gather',  res: 'wheat',  base: 1, waters: true }, // grows only from soaked water
   well:     { name: 'Well',     icon: '🪣', kind: 'gather',  res: 'water',  base: 2 },
   forest:   { name: 'Forest',   icon: '🌲', kind: 'gather',  res: 'wood',   base: 2 },
   mine:     { name: 'Mine',     icon: '⛏️', kind: 'gather',  res: 'coins',  base: 1 },
+  // pours water from the store into every field it can; brings nothing home. Always 1 step from home.
+  irrigation: { name: 'Irrigation', icon: '🚿', kind: 'irrigate' },
   // converters process the whole store in one visit, in batches of `in` → `out`
   bakery:   { name: 'Bakery',   icon: '🥖', kind: 'convert', from: 'wheat', to: 'bread',  in: 2, out: 1, verb: 'bake' },
   fletcher: { name: 'Fletcher', icon: '🪚', kind: 'convert', from: 'wood',  to: 'arrows', in: 1, out: 2, verb: 'make arrows' },
@@ -34,12 +37,12 @@ const TYPES = {
 const THREATS = {
   fire:     { name: 'Fire',     icon: '🔥', res: 'water',  per: 1, hpMul: 1, done: 'put out' },
   // arrows come 2 per wood, so monsters are tougher to keep fire and monster seasons equally hard
-  monsters: { name: 'Monsters', icon: '👹', res: 'arrows', per: 1, hpMul: 1.5, done: 'driven off' },
+  monsters: { name: 'Monsters', icon: '👹', res: 'arrows', per: 1, hpMul: 2, done: 'driven off' },
 };
 
 const MODS = {
   swift:   { name: 'Swift',   icon: '👟', text: 'Travels 1 turn faster (never below 1).', price: 5 },
-  strong:  { name: 'Strong',  icon: '💪', text: 'Carries 3 more when watering or fighting.', price: 4 },
+  strong:  { name: 'Strong',  icon: '💪', text: 'Carries 3 more when fighting.', price: 4 },
   forager: { name: 'Forager', icon: '🧺', text: '+2 every time they gather.', price: 5 },
   artisan: { name: 'Artisan', icon: '🔨', text: 'Double output at the Bakery or Fletcher.', price: 5 },
   golden:  { name: 'Golden',  icon: '✨', text: '+1 🪙 every time they act.', price: 6 },
@@ -76,8 +79,8 @@ const growth = sp => (TYPES[sp.type].waters ? (sp.soak > 0 ? CFG.fieldGrow + sp.
 const batchOut = (sp, w) => (TYPES[sp.type].out + sp.tools) * (1 + (w ? cnt(w, 'artisan') : 0));
 const gatherBase = sp => TYPES[sp.type].base + (sp.dist - 1);
 const gatherAmt = (sp, w) => gatherBase(sp) + sp.pile + (w ? 2 * cnt(w, 'forager') : 0);
-// threats are always a 1-turn round trip; spaces cost their distance
-const travelOf = (t, w) => (t.isThreat ? 1 : Math.max(1, t.dist - (t.road || 0) - (w ? cnt(w, 'swift') : 0)));
+// 👣N: the villager is usable again N turns later (👣1 = next turn). Threats and Irrigation are always 1.
+const travelOf = (t, w) => (t.isThreat || t.type === 'irrigation' ? 1 : Math.max(1, t.dist - (t.road || 0) - (w ? cnt(w, 'swift') : 0)));
 const W = id => S.workers.find(w => w.id === id);
 const target = id => (id === 'T' ? S.threat : id === 'B' ? S.bonus : S.spaces.find(s => s.id === id));
 const threats = () => [S.threat, S.bonus].filter(t => t && !t.cleared);
@@ -85,7 +88,18 @@ const planOf = wid => S.plans.find(p => p.wid === wid);
 const isFree = w => w.away === 0 && !planOf(w.id);
 const freeWorkers = () => S.workers.filter(isFree);
 const avail = r => S.res[r] - S.plans.reduce((a, p) => a + (p.cost[r] || 0), 0);
-const incoming = r => S.plans.reduce((a, p) => a + (p.gain[r] || 0), 0);
+const incoming = r => S.plans.reduce((a, p) => a + (p.gain[r] || 0), 0); // gathered by this turn's plans (arrives when they get home)
+// goods that reach the store within `turns` end-of-turns from now: carried by walkers, plus this turn's plans
+const arriving = (r, turns = 1) => S.workers.reduce((a, w) => a + (w.away > 0 && w.away <= turns ? (w.carry[r] || 0) : 0), 0)
+  + S.plans.reduce((a, p) => a + (p.travel <= turns ? p.gain[r] || 0 : 0), 0);
+const onRoad = r => S.workers.reduce((a, w) => a + (w.away > 0 ? (w.carry[r] || 0) : 0), 0);
+const fields = () => S.spaces.filter(sp => TYPES[sp.type].waters);
+// what a planned Irrigation visit will do: firefighting takes its water first, Irrigation gets what's left
+function irrigationPlan(water = avail('water')) {
+  const fs = fields().slice().sort((a, b) => a.soak - b.soak || (a.id < b.id ? -1 : 1));
+  const n = Math.min(fs.length, Math.floor(Math.max(0, water) / CFG.irrigatePer));
+  return { use: n * CFG.irrigatePer, fields: fs.slice(0, n).map(f => f.id), all: fs.length };
+}
 const plannedDmg = (tid = 'T') => S.plans.reduce((a, p) => a + (p.tid === tid ? p.dmg || 0 : 0), 0);
 const threatStart = (type, s) => Math.round(CFG.threatHp(s) * THREATS[type].hpMul);
 const nextMeal = () => CFG.mealTurns.find(m => m >= S.turn) || CFG.turns;
@@ -103,13 +117,15 @@ function offerDef(id) {
 function addWorker() {
   const used = new Set(S.workers.map(w => w.name));
   const name = S.namePool.find(n => !used.has(n)) || ('V' + S.nextId);
-  const w = { id: 'w' + (S.nextId++), name, color: COLORS[S.workers.length % COLORS.length], mods: [], away: 0, at: null, fresh: false };
+  const w = { id: 'w' + (S.nextId++), name, color: COLORS[S.workers.length % COLORS.length], mods: [], away: 0, at: null, carry: {} };
   S.workers.push(w);
   return w;
 }
 
 function layout() {
-  const chosen = [...shuffle(cellsAt(1)).slice(0, 3), ...shuffle(cellsAt(2)).slice(0, 3), ...shuffle(cellsAt(3)).slice(0, 2)];
+  const near = shuffle(cellsAt(1));
+  const irrigationCell = near.pop();
+  const chosen = [...near, ...shuffle(cellsAt(2)).slice(0, 3), ...shuffle(cellsAt(3)).slice(0, 2)];
   const types = ['field', 'field', 'well', 'forest', 'bakery', 'fletcher', 'mine', pick(['field', 'well', 'forest'])];
   for (let tries = 0; tries < 500; tries++) {
     shuffle(types);
@@ -129,6 +145,7 @@ function layout() {
     return { id: 's' + i, type: types[i], x: c.x, y: c.y, dist: dist(c), road: 0, fert: 0, tools: 0,
       pile: field ? CFG.fieldStart.pile : 1, soak: field ? CFG.fieldStart.soak : 0, lockedBy: null };
   });
+  S.spaces.push({ id: 'irr', type: 'irrigation', x: irrigationCell.x, y: irrigationCell.y, dist: 1, road: 0, fert: 0, tools: 0, pile: 0, soak: 0, lockedBy: null });
 }
 
 function newThreat() {
@@ -175,10 +192,10 @@ function autoSelect() {
 }
 
 // ----- planning -----
-// opts.dry: a Field visit that only harvests (no watering)
-function preview(w, t, opts = {}) {
+// Gains are carried home and land in the store when the villager arrives. Costs leave the store when they set out.
+function preview(w, t) {
   const gain = {}, cost = {};
-  let dmg = 0, pour = 0;
+  let dmg = 0;
   if (t.isThreat) {
     const r = THREATS[t.type].res;
     const amount = Math.min(carry(w), avail(r));
@@ -189,10 +206,9 @@ function preview(w, t, opts = {}) {
     const T = TYPES[t.type];
     if (T.kind === 'gather') {
       gain[T.res] = gatherAmt(t, w);
-      if (T.waters && !opts.dry) {
-        pour = Math.min(carry(w), avail('water'));
-        if (pour) cost.water = pour;
-      }
+    } else if (T.kind === 'irrigate') {
+      // no reserved cost: it takes whatever water firefighting leaves (see irrigationPlan)
+      if (irrigationPlan().use <= 0) return { ok: false, why: `You need at least ${CFG.irrigatePer}${ICON.water} in stock to water a field.` };
     } else {
       const batches = Math.floor(avail(T.from) / T.in);
       if (!batches) return { ok: false, why: `You need at least ${T.in}${ICON[T.from]} in stock to ${T.verb}. Gather it first.` };
@@ -202,7 +218,7 @@ function preview(w, t, opts = {}) {
   }
   const g = cnt(w, 'golden');
   if (g) gain.coins = (gain.coins || 0) + g;
-  return { ok: true, gain, cost, dmg, pour, dry: !!opts.dry, travel: travelOf(t, w) };
+  return { ok: true, gain, cost, dmg, travel: travelOf(t, w) };
 }
 
 function assign(wid, tid) {
@@ -221,18 +237,6 @@ function assign(wid, tid) {
   S.selected = null;
   autoSelect();
   return { ok: true };
-}
-
-// tapping a planned Field again: switch between "harvest and water" and "harvest only"
-function toggleDry(wid) {
-  const i = S.plans.findIndex(p => p.wid === wid);
-  if (i < 0) return { ok: false };
-  const p = S.plans[i], t = target(p.tid);
-  if (!t || t.isThreat || !TYPES[t.type].waters) return { ok: false };
-  S.plans.splice(i, 1);
-  const pv = preview(W(wid), t, { dry: !p.dry });
-  S.plans.splice(i, 0, { wid, tid: p.tid, ...pv });
-  return { ok: true, dry: pv.dry };
 }
 
 function unassign(wid) {
@@ -258,38 +262,34 @@ function endTurn() {
   let fought = false;
   const before = S.threat.hp;
   const got = {};
+  // 1. everyone sets out: costs leave the store, fights land, gathered goods go into their pockets
+  const irrigators = [];
   for (const p of S.plans) {
     const w = W(p.wid), t = target(p.tid);
     for (const r in p.cost) S.res[r] -= p.cost[r];
-    for (const r in p.gain) { S.res[r] += p.gain[r]; got[r] = (got[r] || 0) + p.gain[r]; }
+    for (const r in p.gain) { w.carry[r] = (w.carry[r] || 0) + p.gain[r]; got[r] = (got[r] || 0) + p.gain[r]; }
     if (t.isThreat) { t.hp = Math.max(0, t.hp - p.dmg); if (t === S.threat) fought = true; }
     else {
       if (TYPES[t.type].kind === 'gather') t.pile = 0;
-      if (p.pour) t.soak += p.pour;
       t.lockedBy = w.id;
     }
-    w.away = p.travel; w.at = p.tid; w.fresh = true;
-    report.events.push({ k: 'act', wid: w.id, tid: p.tid, gain: { ...p.gain }, cost: { ...p.cost }, dmg: p.dmg || 0, pour: p.pour || 0, soak: t.soak || 0, travel: p.travel, hp: t.isThreat ? t.hp : null });
+    w.away = p.travel; w.at = p.tid;
+    if (TYPES[t.type] && TYPES[t.type].kind === 'irrigate') { irrigators.push(w); continue; }
+    report.events.push({ k: 'act', wid: w.id, tid: p.tid, gain: { ...p.gain }, cost: { ...p.cost }, dmg: p.dmg || 0, travel: p.travel, hp: t.isThreat ? t.hp : null });
+  }
+  // 2. Irrigation runs after the fights, so firefighting always gets its water first
+  for (const w of irrigators) {
+    const ip = irrigationPlan(S.res.water);
+    S.res.water -= ip.use;
+    const watered = ip.fields.map(id => { const f = target(id); f.soak += CFG.irrigatePer; return { tid: id, soak: f.soak }; });
+    report.events.push({ k: 'water', wid: w.id, tid: w.at, used: ip.use, fields: watered, gain: { ...w.carry } });
+    if (watered.length) report.log.push(`Watered ${watered.length} field${watered.length > 1 ? 's' : ''} (−${ip.use}💧).`);
   }
   const gotTxt = Object.keys(got).map(r => `+${got[r]}${ICON[r]}`).join(' ');
-  if (gotTxt) report.log.push('Collected ' + gotTxt + '.');
+  if (gotTxt) report.log.push('Gathered ' + gotTxt + '.');
   S.plans = [];
 
-  // travel home
-  for (const w of S.workers) {
-    if (w.away > 0 && !w.fresh) {
-      w.away--;
-      const from = w.at;
-      if (w.away === 0) {
-        const sp = target(w.at);
-        if (sp && !sp.isThreat && sp.lockedBy === w.id) sp.lockedBy = null;
-        w.at = null;
-      }
-      report.events.push({ k: 'step', wid: w.id, tid: from, away: w.away });
-    }
-    w.fresh = false;
-  }
-  // accumulation
+  // 3. growth: spaces with nobody away from them grow (a space visited this turn doesn't)
   for (const sp of S.spaces) if (!sp.lockedBy && TYPES[sp.type].kind === 'gather') {
     const n = growth(sp);
     if (!n) continue; // a dry field doesn't grow
@@ -297,6 +297,24 @@ function endTurn() {
     sp.pile += n;
     report.events.push({ k: 'pile', tid: sp.id, n, pile: sp.pile, soak: sp.soak });
   }
+
+  // 4. everyone out takes a step home; whoever arrives unloads what they carry
+  const home = {};
+  for (const w of S.workers) {
+    if (w.away <= 0) continue;
+    w.away--;
+    const from = w.at, ev = { k: 'step', wid: w.id, tid: from, away: w.away, deliver: {} };
+    if (w.away === 0) {
+      const sp = target(w.at);
+      if (sp && !sp.isThreat && sp.lockedBy === w.id) sp.lockedBy = null;
+      w.at = null;
+      ev.deliver = deliver(w);
+      for (const r in ev.deliver) home[r] = (home[r] || 0) + ev.deliver[r];
+    }
+    report.events.push(ev);
+  }
+  const homeTxt = Object.keys(home).map(r => `+${home[r]}${ICON[r]}`).join(' ');
+  if (homeTxt) report.log.push('Brought home ' + homeTxt + '.');
 
   const T = THREATS[S.threat.type];
   if (fought) report.log.push(`${T.name} ${before} → ${S.threat.hp}.`);
@@ -350,8 +368,16 @@ function endTurn() {
   return report;
 }
 
+// a villager arriving home empties their pockets into the store
+function deliver(w) {
+  const d = { ...w.carry };
+  for (const r in d) S.res[r] += d[r];
+  w.carry = {};
+  return d;
+}
+
 function recallAll() {
-  for (const w of S.workers) { w.away = 0; w.at = null; w.fresh = false; }
+  for (const w of S.workers) { w.away = 0; w.at = null; w.carry = {}; }
   for (const sp of S.spaces) sp.lockedBy = null;
   S.plans = [];
 }
@@ -359,9 +385,11 @@ function recallAll() {
 // end of the last turn, with the season's threat already stopped
 function finishSeason(report) {
   if (S.bonus && !S.bonus.cleared) report.log.push(`The bonus ${THREATS[S.bonus.type].name.toLowerCase()} wandered off.`);
-  meal(report, 'Season-end meal');
+  // everyone comes home and unloads before the season-end meal
+  const deliveries = S.workers.filter(w => w.away > 0).map(w => ({ wid: w.id, tid: w.at, gain: deliver(w) }));
   recallAll();
-  report.events.push({ k: 'recall' });
+  report.events.push({ k: 'recall', deliveries });
+  meal(report, 'Season-end meal');
   if (S.hearts <= 0) { lose('Your village went hungry.'); return; }
   S.log = report.log;
   if (S.season >= CFG.seasons) { S.phase = 'won'; S.over = { win: true, why: `You survived all ${CFG.seasons} seasons.` }; return; }
@@ -463,6 +491,6 @@ function nextSeason() {
 
 if (typeof module !== 'undefined') {
   module.exports = { CFG, TYPES, THREATS, MODS, UPGRADES, ICON, RES, get S() { return S; }, set S(v) { S = v; },
-    newRun, assign, unassign, toggleDry, endTurn, buy, applyTarget, cancelTarget, nextSeason, reroll, preview, freeWorkers,
-    target, threats, nextMeal, W, avail, incoming, totalAppetite, appetite, validTarget, upgradePrice, offerDef, gatherAmt, batchOut, threatStart, growth, carry, plannedDmg, STATE_V };
+    newRun, assign, unassign, endTurn, buy, applyTarget, cancelTarget, nextSeason, reroll, preview, freeWorkers,
+    target, threats, nextMeal, W, avail, incoming, totalAppetite, appetite, validTarget, upgradePrice, offerDef, gatherAmt, batchOut, threatStart, arriving, onRoad, irrigationPlan, fields, growth, carry, plannedDmg, STATE_V };
 }

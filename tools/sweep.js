@@ -12,19 +12,21 @@ function score(st) {
 }
 
 const grid = [];
-for (const hp0 of [4, 5])
-  for (const step of [3, 4, 5])
-    for (const growEvery of [2, 3])
-      for (const monMul of [1.5, 2])
-        for (const fireMul of [0.8, 1])
-          grid.push({
-            name: `hp ${hp0}+${step}/s · grow +1 every ${growEvery} · monsters ×${monMul} · fire ×${fireMul}`,
-            patch: {
-              threatHp: s => hp0 + step * (s - 1), bonusHp: s => hp0 + step * (s - 1),
-              threatGrowth: s => 1 + Math.floor((s - 1) / growEvery),
-            },
-            types: { monsters: monMul, fire: fireMul },
-          });
+for (const hp0 of [5, 6, 8])
+  for (const step of [5, 7])
+    for (const growEvery of [1, 2])
+      for (const monMul of [2, 2.5])
+        for (const meals of [[3, 6], [2, 4, 6]])
+          for (const fieldGrow of [2, 3])
+            grid.push({
+              name: `hp ${hp0}+${step}/s · grow +1 every ${growEvery} · monsters ×${monMul} · meals ${meals.join(',')} · field +${fieldGrow}`,
+              patch: {
+                threatHp: s => hp0 + step * (s - 1), bonusHp: s => hp0 + step * (s - 1),
+                threatGrowth: s => 1 + Math.floor((s - 1) / growEvery),
+                mealTurns: meals, fieldGrow,
+              },
+              types: { monsters: monMul },
+            });
 
 const base = { ...G.CFG };
 const results = [];
@@ -37,7 +39,7 @@ for (const g of grid) {
 Object.assign(G.CFG, base);
 G.THREATS.fire.hpMul = G.THREATS.monsters.hpMul = 1;
 results.sort((a, b) => a.score - b.score);
-for (const r of results.slice(0, 8)) {
+for (const r of results.slice(0, 10)) {
   const s = summary(r.st);
   console.log(`${r.score.toFixed(3)}  ${r.name}\n        s1 ${s['clears season 1']}  win ${s['wins the run']}  hunger ${s['lost to hunger']}  fire ${s['fail rate per fire season']}  monsters ${s['fail rate per monster season']}  near ${s['near misses (threat ≤2)']}`);
 }
