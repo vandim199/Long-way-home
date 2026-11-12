@@ -12,10 +12,10 @@ const CFG = {
   fieldStart: { pile: 2, soak: 2 }, // each Field starts with some wheat and soaked water
   fieldGrow: 2,                     // wheat per soaked water, each free turn
   irrigatePer: 2,                   // water an Irrigation visit pours into each field
-  threatHp: s => 5 + 6.5 * (s - 1),        // × the threat's hpMul, then rounded
+  threatHp: s => 7 + 7 * (s - 1),          // × the threat's hpMul for that season, then rounded
   threatGrowth: s => 1 + Math.floor((s - 1) / 2),
   bounty: (s, unused) => 3 + s + unused,   // paid the moment the season's threat is stopped
-  bonusHp: s => 0.5 * (5 + 6.5 * (s - 1)),  // optional bonus threat (half strength) that appears once the main one is stopped
+  bonusHp: s => 0.5 * (7 + 7 * (s - 1)),  // optional bonus threat (half strength) that appears once the main one is stopped
   bonusBounty: s => 3 + s,
 };
 
@@ -34,10 +34,15 @@ const TYPES = {
   fletcher: { name: 'Fletcher', icon: '🪚', kind: 'convert', from: 'wood',  to: 'arrows', in: 1, out: 2, verb: 'make arrows' },
 };
 
+// linear ramp from a (season 1) to b (season `by`), flat after
+const ramp = (a, b, by) => s => (s >= by ? b : a + ((b - a) * (s - 1)) / (by - 1));
+
 const THREATS = {
-  fire:     { name: 'Fire',     icon: '🔥', res: 'water',  per: 1, hpMul: 1, done: 'put out' },
+  // fire is hardest early (water is split with the fields and Wells deliver late), so it starts weak and catches up
+  fire:     { name: 'Fire',     icon: '🔥', res: 'water',  per: 1, hpMul: ramp(0.55, 0.85, 4), done: 'put out' },
   // arrows come 2 per wood, so monsters are tougher to keep fire and monster seasons equally hard
-  monsters: { name: 'Monsters', icon: '👹', res: 'arrows', per: 1, hpMul: 2, done: 'driven off' },
+  // arrows get cheap once the Forest → Fletcher chain runs (1 wood → 2 arrows), so monsters ramp up from ×1 to ×2.2
+  monsters: { name: 'Monsters', icon: '👹', res: 'arrows', per: 1, hpMul: ramp(1, 2.2, 4), done: 'driven off' },
 };
 
 const MODS = {
@@ -71,7 +76,8 @@ function cellsAt(d) { const out = []; for (let y = 0; y < 5; y++) for (let x = 0
 
 // ----- derived values -----
 const cnt = (w, m) => w.mods.filter(x => x === m).length;
-const appetite = w => Math.max(0, 1 + Math.max(0, w.mods.length - 1) - cnt(w, 'hearty'));
+// every modifier past the first adds +1 bread; Hearty doesn't count toward that penalty (it would cancel itself)
+const appetite = w => { const others = w.mods.filter(m => m !== 'hearty').length; return Math.max(0, 1 + Math.max(0, others - 1) - cnt(w, 'hearty')); };
 const carry = w => CFG.carry + 3 * cnt(w, 'strong');
 const totalAppetite = () => S.workers.reduce((a, w) => a + appetite(w), 0);
 // Fields grow only from soaked water (none when dry); other gathering spaces grow every free turn
@@ -101,7 +107,8 @@ function irrigationPlan(water = avail('water')) {
   return { use: n * CFG.irrigatePer, fields: fs.slice(0, n).map(f => f.id), all: fs.length };
 }
 const plannedDmg = (tid = 'T') => S.plans.reduce((a, p) => a + (p.tid === tid ? p.dmg || 0 : 0), 0);
-const threatStart = (type, s) => Math.round(CFG.threatHp(s) * THREATS[type].hpMul);
+const hpMul = (type, s) => { const m = THREATS[type].hpMul; return typeof m === 'function' ? m(s) : m; };
+const threatStart = (type, s) => Math.round(CFG.threatHp(s) * hpMul(type, s));
 const nextMeal = () => CFG.mealTurns.find(m => m >= S.turn) || CFG.turns;
 function upgradePrice(id) {
   if (id === 'worker') return 7 + 4 * S.bought.worker;
@@ -127,13 +134,15 @@ function layout() {
   const irrigationCell = near.pop();
   const chosen = [...near, ...shuffle(cellsAt(2)).slice(0, 3), ...shuffle(cellsAt(3)).slice(0, 2)];
   const types = ['field', 'field', 'well', 'forest', 'bakery', 'fletcher', 'mine', pick(['field', 'well', 'forest'])];
-  for (let tries = 0; tries < 500; tries++) {
+  for (let tries = 0; tries < 5000; tries++) {
     shuffle(types);
     // the threat is final, so the layout alone must never make a run unwinnable:
-    // Bakery, Fletcher, Well and Forest stay within distance 2 (an extra Well/Forest may sit at 3 if its twin is closer)
+    // Well and Forest stay within distance 2 (an extra Well/Forest may sit at 3 if its twin is closer)
     const ok = chosen.every((c, i) => {
       const d = dist(c), t = types[i];
       if (t === 'mine' && d === 1) return false;
+      // the Bakery and Fletcher are village workshops: always next to home, so food and arrow chains stay short
+      if (t === 'bakery' || t === 'fletcher') return d === 1;
       if (d < 3 || t === 'field' || t === 'mine') return true;
       if (t === 'well' || t === 'forest') return chosen.some((c2, j) => j !== i && types[j] === t && dist(c2) < 3);
       return false;
@@ -166,7 +175,7 @@ function spawnBonus() {
   if (!free.length) return null;
   const c = pick(free);
   const type = S.threat.type === 'fire' ? 'monsters' : 'fire';
-  const hp = Math.round(CFG.bonusHp(S.season) * THREATS[type].hpMul);
+  const hp = Math.round(CFG.bonusHp(S.season) * hpMul(type, S.season));
   S.bonus = { id: 'B', isThreat: true, bonus: true, type, x: c.x, y: c.y, dist: dist(c), hp, max: hp, growth: 0, cleared: false };
   return S.bonus;
 }

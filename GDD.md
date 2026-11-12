@@ -1,7 +1,7 @@
 # Long Way Home — Game Design Document
 
 *Working title.* Single-screen worker-placement roguelike.
-**Status:** playable web prototype **v0.6** (12 Nov 2026). Villagers carry their goods home, 👣1 means "back next turn", and watering is its own space.
+**Status:** playable web prototype **v0.7** (12 Nov 2026). Villagers carry their goods home, 👣1 means "back next turn", watering is its own space, and the Bakery and Fletcher sit next to home.
 
 This document is the source of truth for the design. The numbers live in `src/logic.js` (`CFG` and the tables at the top). If this doc and the code disagree, decide which one is right and fix the other.
 
@@ -51,9 +51,10 @@ Send villagers out from your home to wells, fields, forests and workshops. They 
 ## 5. Board
 
 - 5×5 grid with home at the center. **Travel time = Manhattan distance from home** (1–3).
-- **Random layout each run.** 9 spaces: 4 at distance 1 (Irrigation plus 3 others), 3 at distance 2, 2 at distance 3. Home is always fully surrounded.
-  - Spaces: Irrigation (always next to home), Field ×2, Well, Forest, Bakery, Fletcher, Mine, plus one extra Field, Well or Forest.
-  - **Layout rule:** the Bakery, Fletcher, Well and Forest are never at distance 3. The only exception is an extra Well or Forest, and only if its twin is closer. The Mine is never at distance 1. *Why: the threat is final, so the layout alone must never make a run unwinnable. The layout should change the puzzle, not decide whether it can be solved.*
+- **Random layout each run.** 9 spaces: 4 at distance 1, 3 at distance 2, 2 at distance 3. Home is always fully surrounded.
+  - Spaces: Irrigation, Bakery and Fletcher (always next to home), Field ×2, Well, Forest, Mine, plus one extra Field, Well or Forest.
+  - **Layout rule:** the Bakery, Fletcher and Irrigation are the village workshops and always sit next to home (👣1). The Well and Forest are never at distance 3; the only exception is an extra Well or Forest, and only if its twin is closer. The Mine is never at distance 1.
+  - *Why workshops are next to home (v0.7):* with goods arriving on return, a Fletcher at distance 2 made the arrow chain Forest → Fletcher → fight take 4–5 turns, and the first monster season was lost far more often than the first fire season (bot: 15% vs 0%). Next to home, the chain takes at most 3 turns, and baking gets just as quick. *Why: the threat is final, so the layout alone must never make a run unwinnable. The layout should change the puzzle, not decide whether it can be solved.*
 - Each season the threat appears on a free cell at distance 2–3. The bonus threat takes another free cell at distance 2–3. Where a threat sits doesn't change its travel time (§7).
 
 ## 6. Spaces and the economy
@@ -106,11 +107,11 @@ Mine ──🪙──► market
 
 | Threat | Fight with | Damage | Strength multiplier |
 |---|---|---|---|
-| 🔥 Fire | 💧 water | 1 per water | ×1 |
-| 👹 Monsters | 🏹 arrows | 1 per arrow | **×2** |
+| 🔥 Fire | 💧 water | 1 per water | **×0.55 → ×0.85** (full by season 4) |
+| 👹 Monsters | 🏹 arrows | 1 per arrow | **×1 → ×2.2** (full by season 4) |
 
-- Strength in season *s* = **(5 + 6.5(s − 1)) × multiplier**, rounded: fire 5, 12, 18, 25, 31, 38, 44, 51; monsters 10, 23, 36, 49, 62, 75, 88, 101.
-- *Why monsters are tougher:* with the Fletcher making 2 arrows per wood and an uncapped visit, arrows are cheap, while water is split between fields and firefighting. At equal strength, monster seasons failed about a fifth as often as fire seasons. With faster villagers in v0.6 the gap grew, so monsters went from ×1.5 to ×2.
+- Strength in season *s* = **(7 + 7(s − 1)) × that season's multiplier**, rounded: fire 4, 9, 16, 24, 30, 36, 42, 48; monsters 7, 20, 38, 62, 77, 92, 108, 123.
+- *Why monsters are tougher:* with the Fletcher making 2 arrows per wood and an uncapped visit, arrows are cheap, while water is split between fields and firefighting. At equal strength, monster seasons failed about a fifth as often as fire seasons. *Why the multipliers ramp (v0.7):* the two threats have different curves. Fire is hardest early, while water is split between the fields and firefighting and the Wells deliver late. Monsters are easy early (one Fletcher visit doubles your wood) and hard late. Flat multipliers either crushed early fire or let late monsters run away; ramping both to their full values by season 4 keeps every season's fail rate for both types between about 0% (seasons 1–2) and 25%.
 - It grows by **1 + floor((s − 1)/2)** on any turn nobody fights it: +1 in seasons 1–2, +2 in 3–4, +3 in 5–6, +4 in 7–8.
 - Each villager delivers up to their carry (3, +3 per Strong). Brave adds +2 damage, even with nothing to deliver. Bigger threats mean you send several fighters at once.
 - **Not stopped by end of turn 8: the run is over.** This is final; see pillar 4.
@@ -118,13 +119,13 @@ Mine ──🪙──► market
 
 **Bonus threat (optional)**
 - Appears as soon as the season's threat is stopped (unless that happened on turn 8). It's the other type: stopping fire summons a bonus monster band, and vice versa. Chasing it usually means setting up a supply chain you haven't been using this season.
-- **Half** the season's starting strength (with its multiplier): fire 3, 6, 9 … 25; monsters 5, 12, 18 … 51. It never grows and ignoring it costs nothing. It leaves at season end.
+- **Half** the season's starting strength (with its multiplier): fire 2, 5, 8, 12 … 24; monsters 4, 10, 19, 31 … 62. It never grows and ignoring it costs nothing. It leaves at season end.
 - Reward for stopping it by the end of turn 8: 3 + season 🪙.
 - The point: early victory buys free turns, and the player chooses between safe farming (bread for the meals ahead) and a second payday.
 
 **Food**
 - Meals after turns 3 and 6, and at season end (after turn 8). `CFG.mealTurns` sets the mid-season ones.
-- Each villager eats 1🍞, **+1 for every modifier past their first**, −1 per Hearty (minimum 0).
+- Each villager eats 1🍞, **+1 for every modifier past their first**, −1 per Hearty (minimum 0). **Hearty doesn't count toward the stacking penalty** (fixed in v0.7): Hearty + Golden eats 0, Hearty + Golden + Swift eats 1. Before, Hearty + any one modifier still ate 1, because Hearty itself triggered the penalty it was meant to offset.
 - Each missing bread costs 1 ❤. You start with 5 ❤ (max 5). **At 0 ❤ the run is over.**
 - Feeding 3 villagers takes 9🍞 a season, which is 18🌾: about 9 soaked 💧, or 2–3 Irrigation visits for two fields.
 
@@ -161,21 +162,29 @@ Mine ──🪙──► market
 
 **Targets for the bot:** about 90% clear season 1; about 10–15% win the full run; fire and monsters fail at about the same rate per season faced; hunger and threats both matter.
 
-**v0.6 tuned values** (4000 runs):
+**v0.7 tuned values** (4000 runs):
 
 | Metric | Result |
 |---|---|
-| Clears season 1 | 92% |
-| Wins the full run | 12% |
-| Average seasons cleared | 3.7 |
-| Runs lost to hunger | 29% |
-| Runs lost to fire / monsters | 29% / 29% |
-| Fail rate per fire season | 13.1% |
-| Fail rate per monster season | 12.6% |
-| Losses with the threat at ≤2 strength ("near misses") | 9% of runs |
-| Bonus threats stopped per run | 0.08 |
+| Clears season 1 | 100% |
+| Wins the full run | 15% |
+| Average seasons cleared | 4.3 |
+| Runs lost to hunger | 21% |
+| Fail rate per fire season | 11.7% |
+| Fail rate per monster season | 12.8% |
+| Fail rate in seasons 1 / 2 / 3 (fire, monsters) | 0%, 0% / 3%, 0% / 23%, 13% |
+| Losses with the threat at ≤2 strength ("near misses") | 7% of runs |
+| Bonus threats stopped per run | 0.19 |
 
-**What the v0.6 sweep found**
+**What the v0.7 tuning found**
+- The designer found monsters far too strong early. The overall per-season averages (fire 13%, monsters 13%) hid it: split by season, the first monster season failed 15% and the first fire season 0%. **Always check fail rates per season and type, not just the averages.**
+- Moving the Bakery and Fletcher next to home fixed early monsters but made them too easy overall (6% vs 16.5% for fire), and fire then hit a wall in season 2 (32%).
+- Per-type ramps (fire ×0.55 → ×0.85, monsters ×1 → ×2.2, both full by season 4), threats at 7 + 7 per season and growth stepping up every 2 seasons smoothed both curves.
+- Season 1 is now never lost by the bot (target was about 90%). That fits the designer's feedback, since early game felt too harsh. If season 1 feels dull, raise the season 1 multipliers.
+
+**v0.6 tuned values** (for reference): season 1 92%, wins 12%, fire 13.1% / monsters 12.6% per season, losses split evenly between fire, monsters and hunger. Superseded because the first monster season was much harder than the first fire season.
+
+**What the v0.6 sweep found** (on the v0.6 rules)
 - 👣1 = next turn, plus goods carried home, plus the Irrigation space, on the v0.5 numbers: the bot won 62% and monster seasons almost never failed (0.3%). Faster villagers outweigh goods arriving later.
 - The 216-combination sweep (threat start and step, growth, monster multiplier, meal schedule, field growth) favoured steeper threats (5 + 6.5 per season), monsters ×2, and fields at +2🌾 per soaked 💧 instead of +3. Meals after 3 and 6 beat 2/4/6, which pushed hunger above 40%.
 - Steps of 6 and 7 per season bracketed the target (16% and 9% wins); 6.5 lands at 12%.
@@ -225,6 +234,9 @@ Mine ──🪙──► market
 | Optional bonus threat after an early clear | Adopted (v0.3) | Gives the free turns a goal without adding failure |
 | Threats are a 1-turn trip | Adopted (v0.4) | Designer's call: fighting costs bodies, not walking time. Since v0.6 that truly means back next turn |
 | Monsters ×1.5 strength (×2 in v0.6) | Adopted (v0.5) | Cheap arrows made monster seasons much easier than fire |
+| Bakery and Fletcher always next to home | Adopted (v0.7) | Carried goods made the arrow chain too slow; early monster seasons were lopsided |
+| Threat multipliers ramp by season, per type | Adopted (v0.7) | Fire is hard early, monsters late; flat multipliers couldn't balance both |
+| Hearty excluded from the stacking penalty | Fixed (v0.7) | Hearty + one modifier still ate 1, which read as a bug |
 | 👣N = usable again in N turns; goods arrive with the villager | Adopted (v0.6) | Badge means what it says; carrying home makes distance cost time twice |
 | Watering is its own space (Irrigation), fire takes water first | Adopted (v0.6) | One clear decision instead of a hidden default on every harvest |
 | Modifiers stack | Adopted (v0.1) | Sandbox; appetite is the brake |
@@ -240,6 +252,11 @@ Mine ──🪙──► market
 
 ## Changelog
 
+- **v0.7 (2026-11-12):** early monsters and Hearty.
+  - Bug fix: Hearty no longer counts toward the stacking penalty, so Hearty + one other modifier eats 0.
+  - The Bakery and Fletcher always sit next to home (with Irrigation), so wood → arrows → fight takes at most 3 turns.
+  - Threat strength is 7 + 7 per season × a per-type multiplier that ramps by season 4: fire ×0.55 → ×0.85, monsters ×1 → ×2.2. Growth +1 every 2 seasons. The bonus threat stays at half strength.
+  - Bot: season 1 100%, wins 15%. First monster season fails 0% (was 15%).
 - **v0.6 (2026-11-12):** travel, carrying and watering.
   - 👣N now means the villager is usable again N turns later (👣1 = next turn). Previously 👣1 meant missing the next turn.
   - Goods are carried home and reach the store when the villager arrives. Converter input leaves the store at departure; output arrives on return. Fight damage is immediate. Everyone unloads before the season-end meal.

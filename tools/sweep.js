@@ -12,23 +12,24 @@ function score(st) {
 }
 
 const grid = [];
-for (const hp0 of [5, 6, 8])
-  for (const step of [5, 7])
-    for (const growEvery of [1, 2])
-      for (const monMul of [2, 2.5])
-        for (const meals of [[3, 6], [2, 4, 6]])
-          for (const fieldGrow of [2, 3])
-            grid.push({
-              name: `hp ${hp0}+${step}/s · grow +1 every ${growEvery} · monsters ×${monMul} · meals ${meals.join(',')} · field +${fieldGrow}`,
-              patch: {
-                threatHp: s => hp0 + step * (s - 1), bonusHp: s => hp0 + step * (s - 1),
-                threatGrowth: s => 1 + Math.floor((s - 1) / growEvery),
-                mealTurns: meals, fieldGrow,
-              },
-              types: { monsters: monMul },
-            });
+// monsters ramp from ×1 in season 1 to ×monMax by season 3
+const ramp = M => s => Math.min(M, 1 + ((M - 1) / 2) * (s - 1));
+for (const hp0 of [6, 7, 8])
+  for (const step of [6.5, 7.5])
+    for (const monMax of [2.5, 3])
+      for (const fireMul of [1, 0.85])
+        for (const growEvery of [1, 2])
+          grid.push({
+            name: `hp ${hp0}+${step}/s · monsters ×1→×${monMax} · fire ×${fireMul} · grow +1 every ${growEvery}`,
+            patch: {
+              threatHp: s => hp0 + step * (s - 1), bonusHp: s => 0.5 * (hp0 + step * (s - 1)),
+              threatGrowth: s => 1 + Math.floor((s - 1) / growEvery),
+            },
+            types: { monsters: ramp(monMax), fire: fireMul },
+          });
 
 const base = { ...G.CFG };
+const baseMul = { fire: G.THREATS.fire.hpMul, monsters: G.THREATS.monsters.hpMul };
 const results = [];
 for (const g of grid) {
   Object.assign(G.CFG, base, g.patch);
@@ -37,7 +38,7 @@ for (const g of grid) {
   results.push({ name: g.name, score: score(st), st });
 }
 Object.assign(G.CFG, base);
-G.THREATS.fire.hpMul = G.THREATS.monsters.hpMul = 1;
+G.THREATS.fire.hpMul = baseMul.fire; G.THREATS.monsters.hpMul = baseMul.monsters;
 results.sort((a, b) => a.score - b.score);
 for (const r of results.slice(0, 10)) {
   const s = summary(r.st);

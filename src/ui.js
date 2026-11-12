@@ -370,7 +370,7 @@ function offerCard(o, i) {
   const afford = S.res.coins >= price;
   return `<div class="offer ${o.sold ? 'sold' : ''}">
     <span class="oi">${d.icon}</span>
-    <span class="ot"><b>${esc(d.name)}</b><span>${esc(d.text)}</span>${d.mod ? '<em>Stacks. Each modifier past the first adds +1 🍞 to that villager’s meals.</em>' : ''}</span>
+    <span class="ot"><b>${esc(d.name)}</b><span>${esc(d.text)}</span>${d.mod ? '<em>Stacks. Each modifier past the first adds +1 🍞 to that villager’s meals (Hearty doesn’t count).</em>' : ''}</span>
     <button data-act="buy" data-i="${i}" ${o.sold || !afford ? 'disabled' : ''}>${o.sold ? 'Bought' : `${price}${ico('coins')}`}</button></div>`;
 }
 
@@ -409,7 +409,7 @@ function renderOverlay() {
         <li><b>The long way home.</b> 👣 is when the villager can go out again: 👣1 means next turn, 👣2 the turn after. What they gather arrives in your store when they get home, not before. Until they're back, you can't use that villager <i>or</i> that space.</li>
         <li><b>Piles grow.</b> Wells, Forests and the Mine grow +1 every turn nobody is using them. Far spaces start bigger.</li>
         <li><b>Water your fields.</b> Fields grow only from soaked water: each free turn a field turns 1 soaked ${ico('water')} into +${CFG.fieldGrow} ${ico('wheat')}, and a dry field doesn't grow. Send someone to <b>Irrigation</b> (always 👣1) to pour ${CFG.irrigatePer} ${ico('water')} into every field you can afford. Firefighters get their water first; Irrigation uses what's left.</li>
-        <li><b>Bake and fletch everything at once.</b> The Bakery turns all your wheat into bread (2 ${ico('wheat')} → 1 ${ico('bread')}); the Fletcher turns all your wood into arrows (1 ${ico('wood')} → 2 ${ico('arrows')}). They only use what's already in your store, and their output arrives when the villager gets home.</li>
+        <li><b>Bake and fletch everything at once.</b> The Bakery turns all your wheat into bread (2 ${ico('wheat')} → 1 ${ico('bread')}); the Fletcher turns all your wood into arrows (1 ${ico('wood')} → 2 ${ico('arrows')}). Both sit right next to home (👣1). They only use what's already in your store, and their output arrives when the villager gets home.</li>
         <li><b>Meals.</b> After turn ${CFG.mealTurns.join(', ')} and at season end, each villager eats ${ico('bread')}. Each missing bread costs a heart. At 0 hearts the run ends.</li>
         <li><b>The threat.</b> Fight it by sending villagers with ${ico('water')} (fire) or ${ico('arrows')} (monsters). Water is also what grows your wheat, so fire seasons are hungry seasons. Each carries ${CFG.carry}. Any number can go at once, and fighters are always back next turn (👣1). Damage lands right away. It grows on turns you don't fight it. Stop it by turn ${CFG.turns} or the run ends. The season always lasts ${CFG.turns} turns, so stopping it early leaves free turns to farm.</li>
         <li><b>Bonus threat.</b> Once the season's threat is stopped, a <span class="star">★</span> bonus threat of the other kind appears. It's optional: it never grows and ignoring it costs nothing, but stopping it pays extra ${ico('coins')}.</li>
