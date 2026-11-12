@@ -342,7 +342,16 @@ function renderFoot() {
   btn.disabled = S.phase !== 'play' || !!anim;
   btn.classList.toggle('busy', !!anim);
   if (anim) btn.innerHTML = `Harvesting… <small>tap anywhere to speed up</small>`;
-  else btn.innerHTML = planned ? `End turn <small>${planned} sent${free ? `, ${free} still home` : ''}</small>` : free ? `End turn <small>nobody sent</small>` : `Wait <small>everyone is away</small>`;
+  else if (!planned && !free) btn.innerHTML = `Wait <small>everyone is away</small>`;
+  else {
+    // this turn's payout at a glance: "+5 coins +3 wheat −3 fire"
+    const gains = {};
+    for (const p of S.plans) for (const r in p.gain) gains[r] = (gains[r] || 0) + p.gain[r];
+    const parts = [...RES, 'coins'].filter(r => gains[r]).map(r => `<span>+${gains[r]}${ico(r)}</span>`);
+    for (const th of threats()) { const d = plannedDmg(th.id); if (d) parts.push(`<span class="dmg">−${d}${threatIco(th.type)}</span>`); }
+    const esum = parts.length ? parts.join('') : '<span class="none">nobody sent</span>';
+    btn.innerHTML = `End turn<span class="esum">${esum}</span>${planned && free ? `<small>${free} still home</small>` : ''}`;
+  }
   $('#log').innerHTML = anim ? '' : (S.log || []).map(l => `<li>${esc(l)}</li>`).join('');
 }
 

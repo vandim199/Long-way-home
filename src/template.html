@@ -242,6 +242,12 @@ button.tile:active .art { transform: translateY(1px); }
   padding: 8px 11px 10px; font-family: var(--font-px); font-weight: 700; font-size: 28px; display: flex; flex-direction: column; align-items: center; line-height: 1.05;
   text-shadow: 0 2px 0 var(--ink); }
 #endTurn small { font-family: var(--font-body); font-weight: 700; font-size: 12px; text-shadow: none; opacity: .9; }
+/* what this turn will pay out, on the button itself */
+.esum { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin: 5px 0 2px; font-size: 19px; text-shadow: none; }
+.esum span { display: inline-flex; align-items: center; gap: 1px; background: var(--parch); color: var(--ink); border: 2px solid var(--ink); border-radius: 5px; padding: 0 4px; line-height: 20px; }
+.esum .sp { --k: 1; }
+.esum .dmg { background: #ffd9cf; color: var(--bad); }
+.esum .none { background: transparent; color: var(--parch); border-color: transparent; font-family: var(--font-body); font-size: 12px; font-weight: 700; }
 #endTurn:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink), inset 0 3px 0 rgba(255,255,255,.25); }
 #endTurn:disabled { filter: grayscale(.5); opacity: .8; }
 #endTurn.busy { animation: pick .6s ease-in-out infinite; }
@@ -306,6 +312,43 @@ button.tile:active .art { transform: translateY(1px); }
 .flash .art { animation: flash .35s ease-out; }
 @keyframes flash { 30% { filter: brightness(1.6) saturate(1.2); transform: scale(1.06); } }
 .cell.hit { animation: shake .35s steps(6); }
+
+/* desktop: the board on the left, everything else in a column on the right */
+@media (min-width: 960px) {
+  #app { display: grid; max-width: 1080px; padding: 20px 24px 28px; column-gap: 28px; row-gap: 10px; align-items: start;
+    grid-template-columns: auto minmax(360px, 420px);
+    grid-template-rows: auto auto auto auto auto 1fr;
+    grid-template-areas: "board top" "board hud" "board res" "board banner" "board crew" "board foot"; }
+  .top { grid-area: top; }
+  .hud { grid-area: hud; }
+  .res { grid-area: res; }
+  .banner { grid-area: banner; }
+  .crew { grid-area: crew; }
+  .foot { grid-area: foot; }
+  .board-wrap { grid-area: board; position: sticky; top: 16px; align-self: start; }
+  .board { margin: 8px 8px 14px; }
+  .brand h1 { font-size: 34px; }
+  .crew { grid-template-columns: 1fr 1fr; }
+  .overlay { align-items: center; }
+}
+/* big screens: draw sprites at 4× */
+@media (min-width: 1240px) and (min-height: 860px) {
+  :root { --px: 4; }
+  #app { max-width: 1200px; }
+  .pill { font-size: 28px; height: 34px; padding: 0 6px 0 7px; top: 5px; border-width: 3px; }
+  .pill .sp { --k: 2; }
+  .pill em, .pill small { font-size: 19px; }
+  .trav { font-size: 23px; line-height: 22px; left: 5px; bottom: 5px; }
+  .bubble { min-width: 38px; height: 38px; font-size: 28px; border-radius: 19px; top: 6px; right: 6px; }
+  .bubble::before { font-size: 16px; left: -15px; }
+  .tile.foe .pill.dmgpv { bottom: 38px; }
+  .soak { height: 30px; font-size: 24px; right: 5px; bottom: 5px; }
+  .soak .sp { --k: 2; }
+  .tile.t-field .who, .tile.t-field .walker { bottom: 32px; }
+  .tile.t-field .bubble { top: 42px; }
+  .home-who .sp { --k: 2; }
+  .ext { font-size: 18px; }
+}
 
 @media (max-width: 370px) {
   #app { padding-left: 8px; padding-right: 8px; }
