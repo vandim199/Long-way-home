@@ -286,6 +286,9 @@ button.tile:active .art { transform: translateY(1px); }
 .next { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
 .rules { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
 .end.loss h2 { color: var(--bad); }
+.menu .saved { margin: 0; font-size: 13px; color: var(--ink-soft); }
+.menu .note-l { font-size: 13px; }
+.menu textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; padding: 8px; border: 3px solid var(--ink); border-radius: 6px; background: #fff9e8; color: var(--ink); resize: vertical; }
 .credits { font-size: 11px; color: var(--ink-soft); margin: 0; }
 .toast { position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, 20px); background: var(--ink); color: var(--parch); border: 3px solid var(--parch); border-radius: 6px; padding: 8px 12px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 50; max-width: calc(100% - 32px); text-align: center; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -374,6 +377,7 @@ button.tile:active .art { transform: translateY(1px); }
     <div class="top-btns">
       <button class="icon-btn" data-act="mute" id="muteBtn" aria-label="Sound on/off">🔊</button>
       <button class="icon-btn" data-act="help" aria-label="How to play">?</button>
+      <button class="icon-btn" data-act="menu" aria-label="Save and log">💾</button>
     </div>
     <div class="stats">
       <div class="stat panel"><small>Season</small><b id="season">1/8</b></div>
@@ -416,6 +420,7 @@ const SFX_SRC = {
   error: '{{asset:assets/sfx/error.mp3}}',
 };
 /*LOGIC*/
+/*SAVE*/
 /*UI*/
 </script>
 </body>

@@ -4,10 +4,10 @@
 const $ = s => document.querySelector(s);
 let toastTimer = null;
 let helpOpen = false;
+let menuOpen = false; // the Save & log sheet
 let anim = null; // { fast, combo } while a turn is being replayed
 const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
 
 // ---------- sprites (Kenney Tiny Farm F, Tiny Town T, Tiny Dungeon D; 12 tiles per row) ----------
 function sp(code, k, extra = '', cls = '') {
@@ -161,6 +161,7 @@ function render() {
   renderCrew();
   renderFoot();
   renderOverlay();
+  if (!anim) saveGame(); // during a replay S is the pre-turn copy; playTurn saves the real state itself
 }
 
 function renderTop() {
@@ -377,6 +378,26 @@ function offerCard(o, i) {
 function renderOverlay() {
   const ov = $('#overlay');
   if (anim) { ov.hidden = true; ov.innerHTML = ''; return; }
+  if (menuOpen) {
+    if (ov.querySelector('.menu')) return renderMenuInfo(); // keep a half-typed note
+    ov.hidden = false;
+    ov.innerHTML = `<div class="sheet panel menu">
+      <p class="eyebrow">Save &amp; log</p>
+      <h2>Your village is saved</h2>
+      <p class="saved" id="savedInfo"></p>
+      <label class="note-l" for="noteText">Something odd, unfair or fun just happened? Describe it. The note is pinned to this turn, with a snapshot of the board.</label>
+      <textarea id="noteText" rows="3" maxlength="2000" placeholder="e.g. The fire grew even though Ada went to fight it"></textarea>
+      <div class="sheet-actions"><button class="ghost" data-act="note">Add note</button></div>
+      <p class="saved">The log keeps your last ${LOG_RUNS} runs: every turn's plan and result, your market buys and your notes.<br><span id="logInfo"></span></p>
+      <div class="sheet-actions">
+        <button class="ghost" data-act="loadfile">Load from file…</button>
+        <button class="go" data-act="dllog">Download log</button>
+      </div>
+      <input type="file" id="loadFile" accept=".json,application/json" hidden>
+      <div class="sheet-actions"><button class="ghost" data-act="clearlog">Clear log</button><button class="go" data-act="closemenu">Back to the game</button></div></div>`;
+    $('#loadFile').addEventListener('change', onLoadFile);
+    return renderMenuInfo();
+  }
   if (S.phase === 'shop') {
     const nextT = THREATS[S.nextThreat];
     ov.hidden = false;
@@ -399,7 +420,7 @@ function renderOverlay() {
       <h2>${esc(S.over.why)}</h2>
       <p>Reached season ${S.season}, turn ${S.turn}, with ${S.workers.length} villagers.</p>
       <ul class="sum">${(S.log || []).map(l => `<li>${esc(l)}</li>`).join('')}</ul>
-      <div class="sheet-actions"><button class="go" data-act="newrun">New run</button></div></div>`;
+      <div class="sheet-actions"><button class="ghost" data-act="dllog">Download log</button><button class="go" data-act="newrun">New run</button></div></div>`;
   } else if (helpOpen) {
     ov.hidden = false;
     ov.innerHTML = `<div class="sheet panel help">
@@ -423,6 +444,31 @@ function renderOverlay() {
   }
 }
 
+function renderMenuInfo() {
+  const sz = logSize();
+  const ago = lastSave ? Math.max(0, Math.round((Date.now() - lastSave) / 1000)) : null;
+  $('#savedInfo').textContent = ago === null ? 'Saving isn’t working in this browser (storage is blocked), so the run won’t survive a reload.'
+    : `Saved automatically in this browser after every move (last save ${ago < 5 ? 'just now' : ago + 's ago'}). Close the page and you'll pick up right here: season ${S.season}, turn ${S.turn}.`;
+  $('#logInfo').textContent = `Now: ${sz.runs} run${sz.runs === 1 ? '' : 's'}, ${sz.turns} turn${sz.turns === 1 ? '' : 's'}, ${sz.notes} note${sz.notes === 1 ? '' : 's'} (${sz.kb} KB).`;
+}
+
+// load a save or a downloaded log: restores the exact spot it was saved at
+function onLoadFile(e) {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  f.text().then(text => {
+    const s = stateFromFile(text);
+    if (typeof s === 'string') { toast(s, true); return; }
+    S = s;
+    menuOpen = false;
+    helpOpen = false;
+    logNewRun('loaded');
+    toast(`Loaded: season ${S.season}, turn ${S.turn}.`);
+    sfx('bell', 5, 0.5);
+    render();
+  });
+}
+
 // ---------- turn replay ----------
 const STEP = { water: 360, spawn: 900, act: 430, step: 330, home: 380, pile: 170, tgrow: 520, clear: 950, meal: 750, recall: 600, bounty: 800, overrun: 700 };
 const pace = n => Math.max(0.55, 1 - n * 0.035);
@@ -432,6 +478,8 @@ async function playTurn() {
   const report = endTurn();
   if (!report) return;
   const after = S;
+  logTurn(before, report);
+  saveGame(after);
   if (reduceMotion() && sound.muted) { render(); return; }
   S = before;
   anim = { fast: false, combo: 0 };
@@ -658,21 +706,38 @@ function onClick(e) {
   const act = el.dataset.act, id = el.dataset.id;
   if (act === 'mute') { sound.muted = !sound.muted; store.set('lwh-muted', sound.muted ? '1' : '0'); if (!sound.muted) sfx('select'); return renderTop(); }
   if (act === 'help') { helpOpen = true; sfx('select'); return render(); }
-  if (act === 'closehelp') { helpOpen = false; sfx('select'); return render(); }
-  if (act === 'newrun') { newRun(); helpOpen = false; sfx('place'); return render(); }
-  if (act === 'end') { if (S.phase === 'play') playTurn(); return; }
-  if (act === 'buy') {
-    const r = buy(+el.dataset.i);
-    if (!r.ok && r.why) toast(r.why, true);
-    else if (r.ok) { sfx('coins', 0, 0.8); sfx('clink', 5, 0.5); }
+  if (act === 'menu') { menuOpen = true; sfx('select'); return render(); }
+  if (act === 'closemenu') { menuOpen = false; sfx('select'); return render(); }
+  if (act === 'dllog') { const name = downloadLog(); toast(`Downloaded ${name}`); sfx('ding', 2, 0.5); return; }
+  if (act === 'loadfile') { $('#loadFile')?.click(); return; }
+  if (act === 'clearlog') { clearLog(); toast('Log cleared. Your current run is kept.'); return render(); }
+  if (act === 'note') {
+    const ta = $('#noteText'), text = ta ? ta.value.trim() : '';
+    if (!text) { toast('Write something first.', true); return; }
+    logEntry('note', { text, state: clone(S) });
+    ta.value = '';
+    toast('Note added to the log.');
+    sfx('clink', 5, 0.6);
     return render();
   }
-  if (act === 'reroll') { if (reroll()) sfx('coins', -3, 0.7); return render(); }
-  if (act === 'next') { nextSeason(); sfx('bell', 5, 0.5); return render(); }
+  if (act === 'closehelp') { helpOpen = false; sfx('select'); return render(); }
+  if (act === 'newrun') { newRun(); logNewRun(); helpOpen = false; menuOpen = false; sfx('place'); return render(); }
+  if (act === 'end') { if (S.phase === 'play') playTurn(); return; }
+  if (act === 'buy') {
+    const o = S.shop.offers[+el.dataset.i], price = o && upgradePrice(o.id);
+    const r = buy(+el.dataset.i);
+    if (!r.ok && r.why) toast(r.why, true);
+    else if (r.ok) { sfx('coins', 0, 0.8); sfx('clink', 5, 0.5); if (!r.targeting) logEntry('buy', { item: offerDef(o.id).name, price }); }
+    return render();
+  }
+  if (act === 'reroll') { const price = S.shop && S.shop.reroll; if (reroll()) { sfx('coins', -3, 0.7); logEntry('reroll', { price }); } return render(); }
+  if (act === 'next') { nextSeason(); logEntry('season', { state: clone(S) }); sfx('bell', 5, 0.5); return render(); }
   if (act === 'cancel') { cancelTarget(); return render(); }
   if (S.phase === 'target') {
     if (act === 'worker' || act === 'tile') {
+      const pend = S.pending, obj = W(id) || target(id), price = pend && upgradePrice(pend.id);
       const r = applyTarget(id);
+      if (r.ok) logEntry('buy', { item: offerDef(pend.id).name, price, on: obj.name || `${spaceName(obj)} (${obj.id})` });
       if (!r.ok && r.why) toast(r.why, true);
       else if (r.ok) { sfx('clink', 7, 0.8); sfx('ding', 2, 0.4); }
       return render();
@@ -726,8 +791,10 @@ function paintField() {
 }
 
 function start(data) {
-  if (data && data.S && data.S.v === STATE_V && data.S.workers && data.S.threat) S = data.S;
-  else newRun();
+  const saved = loadGame();
+  if (data && validState(data.S)) S = data.S; // hot reload while developing
+  else if (saved) { S = saved; logEntry('resumed'); }
+  else { newRun(); logNewRun(); }
   document.addEventListener('click', onClick);
   document.addEventListener('pointerdown', audioInit, { once: true });
   $('#logo').innerHTML = sp('F68', 2);

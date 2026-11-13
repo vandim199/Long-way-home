@@ -246,12 +246,14 @@ Mine ──🪙──► market
 - Vanilla JS, no dependencies, one self-contained page. Mobile-first (designed at about 390px wide).
 - `src/logic.js` holds the rules and state and has no DOM. `src/ui.js` handles rendering and input. `tools/build.js` inlines both into `index.html`, along with the art and sound as base64, so the page still opens from `file://`.
 - Saved state carries a version (`S.v`, `STATE_V` in `logic.js`). The UI discards state from an older version instead of crashing.
+- **Save and session log** (`src/save.js`): the run autosaves to `localStorage` (`lwh-save`) after every action, so closing the page resumes at the same spot. A session log (`lwh-log`, last 5 runs) records one entry per turn (the pre-turn state with the plans, a readable plan list and the turn's result lines), market buys and rerolls, season starts, how each run ended, and notes the player types in the 💾 sheet (each note carries a snapshot). **Download log** saves it as JSON with a plain-text `summary` at the top, the `current` state and every entry. **Load from file** restores the `current` state from a downloaded log (or a save), which is how a reported scenario gets reproduced. If storage is full, old runs and then old snapshots are dropped before the save is.
 - **Look and feel:** pixel-art harvest farm built from Kenney's CC0 Tiny Farm, Tiny Town and Tiny Dungeon sheets (`assets/`, see `assets/CREDITS.md`), scaled by whole numbers so pixels stay crisp. Parchment panels, wooden buttons, a wheat-field backdrop, Jersey 15 pixel font. Emoji only for small icons (modifiers, fire, footsteps).
 - **End-of-turn replay:** `endTurn()` returns an ordered event list (`report.events`). The UI plays it back one beat at a time so the player can follow it: each villager walks out and pops their payout ("+3 🪵"), the icon flies into the store, then Irrigation sends water to each field, fields and piles grow, each walking villager's timer ticks down or they walk home and their goods fly into the store, the threat grows or is stopped, the bonus appears, then the meal. Every beat plays a Kenney sound pitched one step higher on a major pentatonic scale, so a big turn builds up. Tapping during the replay speeds it up. A mute toggle sits in the top bar.
 - If the loop proves fun, consider porting to Unity. Keeping the rules DOM-free makes that port mostly a translation job.
 
 ## Changelog
 
+- **v0.7.1 (2026-11-13):** save and session log. The run autosaves in the browser and resumes on reload. The 💾 button opens a sheet to add notes, download the session log as JSON, or load a save/log file back in. The end-of-run screen also has Download log. No rule changes.
 - **v0.7 (2026-11-12):** early monsters and Hearty.
   - Bug fix: Hearty no longer counts toward the stacking penalty, so Hearty + one other modifier eats 0.
   - The Bakery and Fletcher always sit next to home (with Irrigation), so wood → arrows → fight takes at most 3 turns.
